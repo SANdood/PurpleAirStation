@@ -20,13 +20,13 @@
 *	Date: 2017 - 2018
 *
 *	1.0.00 - Initial Release
-
+*	1.0.01 - Cleanup of descriptionTexts & bug fixes
 *
 */
 include 'asynchttp_v1'
 import groovy.json.JsonSlurper
 
-def getVersionNum() { return "1.0.00" }
+def getVersionNum() { return "1.0.01" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
@@ -287,16 +287,26 @@ void getPurpleAirAQI() {
     asynchttp_v1.get(purpleAirResponse, params)
 }
 
-def purpleAirResponse(response, data) {
-	try {
-        //log.debug "Purple Air json response is: $response.json"
-        //send(name: 'purpleAir', value: response.json, displayed: false)
-        state.purpleAir = response.json
-    } catch (e) {
-        log.error("Exception during Purple Air response processing", e)
-		throw e
+def purpleAirResponse(resp, data) {
+	if (resp && (resp.status == 200)) {
+		try {
+			if (resp.json) {
+				//log.trace "Response: ${resp.json}"
+                log.info "Good data..."
+			} else {
+            	// FAIL - no data
+                log.warn "purpleAirResponse() no JSON: ${resp.data}"
+                return false
+            }
+		} catch (Exception e) {
+			log.error "purpleAirResponse() - General Exception: ${e}"
+        	throw e
+            return false
+        } 
+        parsePurpleAir(resp.json)
+        return true
     }
-	if (response.json) parsePurpleAir(response.json)
+    return false
 }
 
 def parsePurpleAir(response) {
@@ -384,7 +394,7 @@ def parsePurpleAir(response) {
         String aqi24 = intString(pm_to_aqi(pm24))
         String aqi7  = intString(pm_to_aqi(pm7))
 
-        sendEvent(name: 'airQualityIndex', 	value: aqi) // intString(pm_to_aqi(pm)))
+        sendEvent(name: 'airQualityIndex', 	value: aqi, displayed: false) // intString(pm_to_aqi(pm)))
         String p25 = decString(pm,1) + ' µg/m³'
         if (oldData == '') {
             if 		(aqi.toFloat() < 51)  sendEvent(name: 'message', value: ' GOOD - little to no health risk '+ "(${p25})")
@@ -399,21 +409,21 @@ def parsePurpleAir(response) {
         }
 		log.info "AQI: ${aqi}"
         
-        sendEvent(name: 'aqi', 	 value: aqi)
-        sendEvent(name: 'aqi10', value: aqi10)
-        sendEvent(name: 'aqi30', value: aqi30)
-        sendEvent(name: 'aqi1',  value: aqi1)
-        sendEvent(name: 'aqi6',  value: aqi6)
-        sendEvent(name: 'aqi24', value: aqi24)
-        sendEvent(name: 'aqi7',  value: aqi7)
+        sendEvent(name: 'aqi', 	 value: aqi,   descriptionText: "AQI real time is ${aqi}")
+        sendEvent(name: 'aqi10', value: aqi10, descriptionText: "AQI 10 minute average is ${aqi10}")
+        sendEvent(name: 'aqi30', value: aqi30, descriptionText: "AQI 30 minute average is ${aqi10}")
+        sendEvent(name: 'aqi1',  value: aqi1,  descriptionText: "AQI 1 hour average is ${aqi10}")
+        sendEvent(name: 'aqi6',  value: aqi6,  descriptionText: "AQI 6 hour average is ${aqi10}")
+        sendEvent(name: 'aqi24', value: aqi24, descriptionText: "AQI 24 hour average is ${aqi10}")
+        sendEvent(name: 'aqi7',  value: aqi7,  descriptionText: "AQI 7 day average is ${aqi10}")
 
-        sendEvent(name: 'pm',   value: pm,   unit: 'µg/m³')
-        sendEvent(name: 'pm10', value: pm10, unit: 'µg/m³')
-        sendEvent(name: 'pm30', value: pm30, unit: 'µg/m³')
-        sendEvent(name: 'pm1',  value: pm1,  unit: 'µg/m³')
-        sendEvent(name: 'pm6',  value: pm6,  unit: 'µg/m³')
-        sendEvent(name: 'pm24', value: pm24, unit: 'µg/m³')
-        sendEvent(name: 'pm7',  value: pm7,  unit: 'µg/m³')
+        sendEvent(name: 'pm',   value: pm,   unit: 'µg/m³', descriptionText: "PM2.5 real time is ${pm}µg/m³")
+        sendEvent(name: 'pm10', value: pm10, unit: 'µg/m³', descriptionText: "PM2.5 10 minute average is ${pm10}µg/m³")
+        sendEvent(name: 'pm30', value: pm30, unit: 'µg/m³', descriptionText: "PM2.5 30 minute average is ${pm30}µg/m³")
+        sendEvent(name: 'pm1',  value: pm1,  unit: 'µg/m³', descriptionText: "PM2.5 1 hour average is ${pm1}µg/m³")
+        sendEvent(name: 'pm6',  value: pm6,  unit: 'µg/m³', descriptionText: "PM2.5 6 hour average is ${pm6}µg/m³")
+        sendEvent(name: 'pm24', value: pm24, unit: 'µg/m³', descriptionText: "PM2.5 24 hour average is ${pm25}µg/m³")
+        sendEvent(name: 'pm7',  value: pm7,  unit: 'µg/m³', descriptionText: "PM2.5 7 day average is ${pm7}µg/m³")
     } else {
     	sendEvent(name: 'message', value: oldData) // ERROR
     }
