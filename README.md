@@ -17,4 +17,8 @@ D. The Station ID is the first element in the results[:] map - you will enter th
 
 That's it - save, and you should be up and running!
 
+#### Donations
 As always, my contributions to the SmartThings community are entirely free, but should you feel compelled to make a donation, you can do so here: https://paypal.me/BarryABurke
+
+## Screen Shot:
+<img src="https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/images/PurpleAirStation.jpg" border="1" height="900" /> 
