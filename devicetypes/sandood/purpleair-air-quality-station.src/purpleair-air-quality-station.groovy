@@ -21,12 +21,14 @@
 *
 *	1.0.00 - Initial Release
 *	1.0.01 - Cleanup of descriptionTexts & bug fixes
+*	1.0.02 - Fixed typos
+*	1.0.03 - More string edits
 *
 */
 include 'asynchttp_v1'
 import groovy.json.JsonSlurper
 
-def getVersionNum() { return "1.0.01" }
+def getVersionNum() { return "1.0.03" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
@@ -37,6 +39,7 @@ metadata {
         capability "Refresh"
 
         attribute "locationName", "string"
+        attribute "ID", "string"
         attribute "pressure", "string"
         attribute "airQualityIndex", "string"
         attribute "aqi", "string"				// current AQI
@@ -351,32 +354,32 @@ def parsePurpleAir(response) {
         }
     }
 	//log.info "Single: ${single}"
-    Float pm
-    Float pm10
-    Float pm30
-    Float pm1
-    Float pm6
-    Float pm24
-    Float pm7
+    def pm
+    def pm10
+    def pm30
+    def pm1
+    def pm6
+    def pm24
+    def pm7
     def rssi
     if (single >= 0) {
     	if (single == 2) {
-            pm   = (stats[0].v.toFloat()  + stats[1].v.toFloat()  ) / 2.0
-            pm10 = (stats[0].v1.toFloat() + stats[1].v1.toFloat() ) / 2.0
-            pm30 = (stats[0].v2.toFloat() + stats[1].v2.toFloat() ) / 2.0
-            pm1  = (stats[0].v3.toFloat() + stats[1].v3.toFloat() ) / 2.0
-            pm6  = (stats[0].v4.toFloat() + stats[1].v4.toFloat() ) / 2.0
-            pm24 = (stats[0].v5.toFloat() + stats[1].v5.toFloat() ) / 2.0
-            pm7  = (stats[0].v6.toFloat() + stats[1].v6.toFloat() ) / 2.0
+            pm   = decString(((stats[0].v.toFloat()  + stats[1].v.toFloat()  ) / 2.0), 2)
+            pm10 = decString(((stats[0].v1.toFloat() + stats[1].v1.toFloat() ) / 2.0), 2)
+            pm30 = decString(((stats[0].v2.toFloat() + stats[1].v2.toFloat() ) / 2.0), 2)
+            pm1  = decString(((stats[0].v3.toFloat() + stats[1].v3.toFloat() ) / 2.0), 2)
+            pm6  = decString(((stats[0].v4.toFloat() + stats[1].v4.toFloat() ) / 2.0), 2)
+            pm24 = decString(((stats[0].v5.toFloat() + stats[1].v5.toFloat() ) / 2.0), 2)
+            pm7  = decString(((stats[0].v6.toFloat() + stats[1].v6.toFloat() ) / 2.0), 2)
  			rssi = Math.round((response.results[0].RSSI.toFloat() + response.results[1].RSSI.toFloat()) / 2.0)
         } else {
-            pm   = stats[single].v.toFloat()
-            pm10 = stats[single].v1.toFloat()
-            pm30 = stats[single].v2.toFloat()
-            pm1  = stats[single].v3.toFloat()
-            pm6  = stats[single].v4.toFloat()
-            pm24 = stats[single].v5.toFloat()
-            pm7  = stats[single].v6.toFloat()
+            pm   = decString(stats[single].v.toFloat(), 2)
+            pm10 = decString(stats[single].v1.toFloat(), 2)
+            pm30 = decString(stats[single].v2.toFloat(), 2)
+            pm1  = decString(stats[single].v3.toFloat(), 2)
+            pm6  = decString(stats[single].v4.toFloat(), 2)
+            pm24 = decString(stats[single].v5.toFloat(), 2)
+            pm7  = decString(stats[single].v6.toFloat(), 2)
             rssi = response.results[single].RSSI.toInteger()
         }
     } else {
@@ -397,12 +400,12 @@ def parsePurpleAir(response) {
         sendEvent(name: 'airQualityIndex', 	value: aqi, displayed: false) // intString(pm_to_aqi(pm)))
         String p25 = decString(pm,1) + ' µg/m³'
         if (oldData == '') {
-            if 		(aqi.toFloat() < 51)  sendEvent(name: 'message', value: ' GOOD - little to no health risk '+ "(${p25})")
-            else if (aqi.toFloat() < 101) sendEvent(name: 'message', value: ' MODERATE - slight risk for some people '+ "(${p25})")
-            else if (aqi.toFloat() < 151) sendEvent(name: 'message', value: ' UNHEALTHY for Sensitive Groups '+ "(${p25})")
-            else if (aqi.toFloat() < 201) sendEvent(name: 'message', value: ' UNHEALTHY for most people '+ "(${p25})")
-            else if (aqi.toFloat() < 301) sendEvent(name: 'message', value: ' VERY UNHEALTHY - serious effects for everyone '+ "(${p25})")
-            else 						  sendEvent(name: 'message', value: ' HAZARDOUS - emergency conditions for everyone '+ "(${p25})")
+            if 		(aqi.toFloat() < 51)  sendEvent(name: 'message', value: " GOOD - little to no health risk (${p25})", descriptionText: 'AQI is GOOD - little to no health risk')
+            else if (aqi.toFloat() < 101) sendEvent(name: 'message', value: " MODERATE - slight risk for some people (${p25})", descriptionText: 'AQI is MODERATE - slight risk for some people')
+            else if (aqi.toFloat() < 151) sendEvent(name: 'message', value: " UNHEALTHY for Sensitive Groups (${p25})", descriptionText: 'AQI is UNHEALTHY for Sensitive Groups')
+            else if (aqi.toFloat() < 201) sendEvent(name: 'message', value: " UNHEALTHY for most people (${p25})", descriptionText: 'AQI is UNHEALTHY for most people')
+            else if (aqi.toFloat() < 301) sendEvent(name: 'message', value: " VERY UNHEALTHY - serious effects for everyone (${p25})", descriptionText: 'AQI is VERY UNHEALTHY - serious effects for everyone')
+            else 						  sendEvent(name: 'message', value: " HAZARDOUS - emergency conditions for everyone (${p25})", descriptionText: 'AQI is HAZARDOUS - emergency conditions for everyone')
         } else {
             sendEvent(name: 'message', value: oldData, descriptionText = "No updates for ${Math.round((age/60000).toFloat())} minutes")
             log.error "No updates for ${Math.round((age/60000).toFloat())} minutes"
@@ -411,18 +414,18 @@ def parsePurpleAir(response) {
         
         sendEvent(name: 'aqi', 	 value: aqi,   descriptionText: "AQI real time is ${aqi}")
         sendEvent(name: 'aqi10', value: aqi10, descriptionText: "AQI 10 minute average is ${aqi10}")
-        sendEvent(name: 'aqi30', value: aqi30, descriptionText: "AQI 30 minute average is ${aqi10}")
-        sendEvent(name: 'aqi1',  value: aqi1,  descriptionText: "AQI 1 hour average is ${aqi10}")
-        sendEvent(name: 'aqi6',  value: aqi6,  descriptionText: "AQI 6 hour average is ${aqi10}")
-        sendEvent(name: 'aqi24', value: aqi24, descriptionText: "AQI 24 hour average is ${aqi10}")
-        sendEvent(name: 'aqi7',  value: aqi7,  descriptionText: "AQI 7 day average is ${aqi10}")
+        sendEvent(name: 'aqi30', value: aqi30, descriptionText: "AQI 30 minute average is ${aqi30}")
+        sendEvent(name: 'aqi1',  value: aqi1,  descriptionText: "AQI 1 hour average is ${aqi1}")
+        sendEvent(name: 'aqi6',  value: aqi6,  descriptionText: "AQI 6 hour average is ${aqi6}")
+        sendEvent(name: 'aqi24', value: aqi24, descriptionText: "AQI 24 hour average is ${aqi24}")
+        sendEvent(name: 'aqi7',  value: aqi7,  descriptionText: "AQI 7 day average is ${aqi7}")
 
         sendEvent(name: 'pm',   value: pm,   unit: 'µg/m³', descriptionText: "PM2.5 real time is ${pm}µg/m³")
         sendEvent(name: 'pm10', value: pm10, unit: 'µg/m³', descriptionText: "PM2.5 10 minute average is ${pm10}µg/m³")
         sendEvent(name: 'pm30', value: pm30, unit: 'µg/m³', descriptionText: "PM2.5 30 minute average is ${pm30}µg/m³")
         sendEvent(name: 'pm1',  value: pm1,  unit: 'µg/m³', descriptionText: "PM2.5 1 hour average is ${pm1}µg/m³")
         sendEvent(name: 'pm6',  value: pm6,  unit: 'µg/m³', descriptionText: "PM2.5 6 hour average is ${pm6}µg/m³")
-        sendEvent(name: 'pm24', value: pm24, unit: 'µg/m³', descriptionText: "PM2.5 24 hour average is ${pm25}µg/m³")
+        sendEvent(name: 'pm24', value: pm24, unit: 'µg/m³', descriptionText: "PM2.5 24 hour average is ${pm24}µg/m³")
         sendEvent(name: 'pm7',  value: pm7,  unit: 'µg/m³', descriptionText: "PM2.5 7 day average is ${pm7}µg/m³")
     } else {
     	sendEvent(name: 'message', value: oldData) // ERROR
@@ -449,8 +452,9 @@ def parsePurpleAir(response) {
     sendEvent(name: 'ID', value: response.results[0].ID, descriptionText: "Purple Air Station ID is ${response.results[0].ID}")
 }
 
-private Float pm_to_aqi(pm) {
+private Float pm_to_aqi(pms) {
 	def aqi
+    Float pm = pms.toFloat()
 	if (pm > 500) {
 	  aqi = 500;
 	} else if (pm > 350.5 && pm <= 500 ) {
