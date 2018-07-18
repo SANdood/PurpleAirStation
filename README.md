@@ -17,6 +17,15 @@ D. The Station ID is the first element in the results[:] map - you will enter th
 
 That's it - save, and you should be up and running!
 
+### Change Log
+*	1.0.00 - Initial Release
+*	1.0.01 - Cleanup of description Texts & bug fixes
+*	1.0.02 - Fixed some typos
+*	1.0.03 - More string edits
+*	1.0.04 - Updated icons & color handling
+*	1.0.05 - Now uses BigDecimal for maximum precision
+*	1.0.06 - Finalized conversion to BigDecimal
+
 #### Donations
 As always, my contributions to the SmartThings community are entirely free, but should you feel compelled to make a donation, you can do so here: https://paypal.me/BarryABurke
 
