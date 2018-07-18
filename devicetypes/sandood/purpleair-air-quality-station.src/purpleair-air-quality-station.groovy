@@ -25,15 +25,14 @@
 *	1.0.03 - More string edits
 *	1.0.04 - Updated icons & color handling
 *	1.0.05 - Now use BigDecimal for maximum precision
+*	1.0.06 - Finalized conversion to BigDecimal
 *
 */
 include 'asynchttp_v1'
 import groovy.json.JsonSlurper
-//import java.text.DecimalFormat
 import java.math.BigDecimal
-//import java.math.MathContext
 
-def getVersionNum() { return "1.0.05" }
+def getVersionNum() { return "1.0.06" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
@@ -531,7 +530,5 @@ private def remap(value, fromLow, fromHigh, toLow, toHigh) {
     return tmpValue + toLow;
 }
 private def roundIt( value, decimals ) {
-	def answer = (value == null) ? '--' : value.toBigDecimal().setScale(decimals, BigDecimal.ROUND_HALF_UP) 
-    log.debug "Value: ${value}, decimals: ${decimals}, result: ${answer}"
-    return answer
+	return (value == null) ? '--' : value.toBigDecimal().setScale(decimals, BigDecimal.ROUND_HALF_UP) 
 }
