@@ -26,41 +26,45 @@
 *	1.0.04 - Updated icons & color handling
 *	1.0.05 - Now use BigDecimal for maximum precision
 *	1.0.06 - Finalized conversion to BigDecimal
+*	1.0.07 - Better error handling
+*	1.0.08 - Changed all numberic attributes to "number"
+*	1.0.09 - Changed to maintain and display only integer AQI (decimals are distracting)
 *
 */
 include 'asynchttp_v1'
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.0.06" }
+def getVersionNum() { return "1.0.09" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
     definition (name: "PurpleAir Air Quality Station", namespace: "sandood", author: "sandood") {
         capability "Temperature Measurement"
         capability "Relative Humidity Measurement"
+        capability "Signal Strength"
         capability "Sensor"
         capability "Refresh"
 
         attribute "locationName", "string"
         attribute "ID", "string"
-        attribute "pressure", "string"
+        attribute "pressure", "number"
         attribute "airQualityIndex", "string"
-        attribute "aqi", "string"				// current AQI
-		attribute "aqi10", "string"				// 10 minute average
-		attribute "aqi30", "string"				// 30 minute average
-		attribute "aqi1", "string"				// 1 hour average
-		attribute "aqi6", "string"				// 6 hour average
-		attribute "aqi24", "string"				// 24 hour average
-		attribute "aqi7", "string"				// 7 day average
-		attribute "pm", "string"				// current 2.5 PM (particulate matter)
-		attribute "pm10", "string"				// 10 minute average
-		attribute "pm30", "string"				// 30 minute average
-		attribute "pm1", "string"				// 1 hour average
-		attribute "pm6", "string"				// 6 hour average
-		attribute "pm24", "string"				// 24 hour average
-		attribute "pm7", "string"				// 7 day average
-		attribute "rssi", "string"
+        attribute "aqi", "number"				// current AQI
+		attribute "aqi10", "number"				// 10 minute average
+		attribute "aqi30", "number"				// 30 minute average
+		attribute "aqi1", "number"				// 1 hour average
+		attribute "aqi6", "number"				// 6 hour average
+		attribute "aqi24", "number"				// 24 hour average
+		attribute "aqi7", "number"				// 7 day average
+		attribute "pm", "number"				// current 2.5 PM (particulate matter)
+		attribute "pm10", "number"				// 10 minute average
+		attribute "pm30", "number"				// 30 minute average
+		attribute "pm1", "number"				// 1 hour average
+		attribute "pm6", "number"				// 6 hour average
+		attribute "pm24", "number"				// 24 hour average
+		attribute "pm7", "number"				// 7 day average
+		attribute "rssi", "number"				// Signal Strength attribute (not supporting lqi)
         attribute 'message', 'string'
   		attribute "updated", "string"
         attribute "timestamp", "string"
@@ -78,19 +82,7 @@ metadata {
         multiAttributeTile(name:"airQualityIndex", type:"generic", width:6, height:4, canChangeIcon: false) {
             tileAttribute("device.airQualityIndex", key: "PRIMARY_CONTROL") {
                 attributeState("default", label:'${currentValue}', /*action: 'noOp',*/ defaultValue: true, 
-					backgroundColors: [						// Gradients don't work well - best to keep colors solid for each range
-                        [value:   0, color: '#44b621'],		// Green - Good
-                        [value:  50, color: '#44b621'],
-                        [value:  51, color: '#f1d801'],		// Yellow - Moderate
-                        [value: 100, color: '#f1d801'],
-                        [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
-                        [value: 150, color: '#d04e00'],
-                        [value: 151, color: '#bc2323'],		// Red - Unhealthy
-                        [value: 200, color: '#bc2323'],
-                        [value: 201, color: '#800080'],		// Purple - Very Unhealthy
-                        [value: 300, color: '#800080'],
-                        [value: 301, color: '#800000']		// Maroon - Hazardous
-                	]
+					backgroundColors: (aqiColors)
 				)
 			}
             tileAttribute("device.message", key: "SECONDARY_CONTROL" ) {
@@ -99,118 +91,34 @@ metadata {
         }   
 		valueTile('aqi', 'device.aqi', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'AQI\n${currentValue}', icon: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/images/purpleair-small.png",
-            	backgroundColors: [
-                    [value:   0, color: '#44b621'],		// Green - Good
-                    [value:  50, color: '#44b621'],
-                    [value:  51, color: '#f1d801'],		// Yellow - Moderate
-                    [value: 100, color: '#f1d801'],
-                    [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
-                    [value: 150, color: '#d04e00'],
-                    [value: 151, color: '#bc2323'],		// Red - Unhealthy
-                    [value: 200, color: '#bc2323'],
-                    [value: 201, color: '#800080'],		// Purple - Very Unhealthy
-                    [value: 300, color: '#800080'],
-                    [value: 301, color: '#800000']		// Maroon - Hazardous
-                ]
+            	backgroundColors: (aqiColors)
         }
         valueTile('aqiDisplay', 'device.aqiDisplay', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: '${currentValue}', icon: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/images/purpleair-small.png"
         }
 		valueTile('aqi10', 'device.aqi10', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: [
-                    [value:   0, color: '#44b621'],		// Green - Good
-                    [value:  50, color: '#44b621'],
-                    [value:  51, color: '#f1d801'],		// Yellow - Moderate
-                    [value: 100, color: '#f1d801'],
-                    [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
-                    [value: 150, color: '#d04e00'],
-                    [value: 151, color: '#bc2323'],		// Red - Unhealthy
-                    [value: 200, color: '#bc2323'],
-                    [value: 201, color: '#800080'],		// Purple - Very Unhealthy
-                    [value: 300, color: '#800080'],
-                    [value: 301, color: '#800000']		// Maroon - Hazardous
-                ]
+            	backgroundColors: (aqiColors)
         }
 		valueTile('aqi30', 'device.aqi30', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: [
-                    [value:   0, color: '#44b621'],		// Green - Good
-                    [value:  50, color: '#44b621'],
-                    [value:  51, color: '#f1d801'],		// Yellow - Moderate
-                    [value: 100, color: '#f1d801'],
-                    [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
-                    [value: 150, color: '#d04e00'],
-                    [value: 151, color: '#bc2323'],		// Red - Unhealthy
-                    [value: 200, color: '#bc2323'],
-                    [value: 201, color: '#800080'],		// Purple - Very Unhealthy
-                    [value: 300, color: '#800080'],
-                    [value: 301, color: '#800000']		// Maroon - Hazardous
-                ]
+            	backgroundColors: (aqiColors)
         }
 		valueTile('aqi1', 'device.aqi1', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: [
-                    [value:   0, color: '#44b621'],		// Green - Good
-                    [value:  50, color: '#44b621'],
-                    [value:  51, color: '#f1d801'],		// Yellow - Moderate
-                    [value: 100, color: '#f1d801'],
-                    [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
-                    [value: 150, color: '#d04e00'],
-                    [value: 151, color: '#bc2323'],		// Red - Unhealthy
-                    [value: 200, color: '#bc2323'],
-                    [value: 201, color: '#800080'],		// Purple - Very Unhealthy
-                    [value: 300, color: '#800080'],
-                    [value: 301, color: '#800000']		// Maroon - Hazardous
-                ]
+            	backgroundColors: (aqiColors)
         }
 		valueTile('aqi6', 'device.aqi6', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: [
-                    [value:   0, color: '#44b621'],		// Green - Good
-                    [value:  50, color: '#44b621'],
-                    [value:  51, color: '#f1d801'],		// Yellow - Moderate
-                    [value: 100, color: '#f1d801'],
-                    [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
-                    [value: 150, color: '#d04e00'],
-                    [value: 151, color: '#bc2323'],		// Red - Unhealthy
-                    [value: 200, color: '#bc2323'],
-                    [value: 201, color: '#800080'],		// Purple - Very Unhealthy
-                    [value: 300, color: '#800080'],
-                    [value: 301, color: '#800000']		// Maroon - Hazardous
-                ]
+            	backgroundColors: (aqiColors)
         }
 		valueTile('aqi24', 'device.aqi24', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: [
-                    [value:   0, color: '#44b621'],		// Green - Good
-                    [value:  50, color: '#44b621'],
-                    [value:  51, color: '#f1d801'],		// Yellow - Moderate
-                    [value: 100, color: '#f1d801'],
-                    [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
-                    [value: 150, color: '#d04e00'],
-                    [value: 151, color: '#bc2323'],		// Red - Unhealthy
-                    [value: 200, color: '#bc2323'],
-                    [value: 201, color: '#800080'],		// Purple - Very Unhealthy
-                    [value: 300, color: '#800080'],
-                    [value: 301, color: '#800000']		// Maroon - Hazardous
-                ]
+            	backgroundColors: (aqiColors)
         }
 		valueTile('aqi7', 'device.aqi7', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: [
-                    [value:   0, color: '#44b621'],		// Green - Good
-                    [value:  50, color: '#44b621'],
-                    [value:  51, color: '#f1d801'],		// Yellow - Moderate
-                    [value: 100, color: '#f1d801'],
-                    [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
-                    [value: 150, color: '#d04e00'],
-                    [value: 151, color: '#bc2323'],		// Red - Unhealthy
-                    [value: 200, color: '#bc2323'],
-                    [value: 201, color: '#800080'],		// Purple - Very Unhealthy
-                    [value: 300, color: '#800080'],
-                    [value: 301, color: '#800000']		// Maroon - Hazardous
-                ]
+            	backgroundColors: (aqiColors)
         }
 		valueTile('pm', 'device.pm', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'Now\n${currentValue}\nµg/m³'
@@ -249,7 +157,7 @@ metadata {
             state "default", label: 'ID\n${currentValue}'
         }
 		valueTile("updated", "device.updated", inactiveLabel: false, width: 3, height: 1, decoration: "flat", wordWrap: true) {
-            state "default", label: '${currentValue}'
+            state "default", label: 'Updated\nat ${currentValue}'
 		}
         valueTile("temperature", "device.temperatureDisplay", width: 1, height: 1, canChangeIcon: true) {
             state "default", label: '${currentValue}°',
@@ -269,7 +177,8 @@ metadata {
                 [value: 100, color: "#ff66ff"]
             ] )
 		}
-        main(["aqiDisplay"])
+       // main(["aqiDisplay"])
+        main(['airQualityIndex'])
         details([	"airQualityIndex",
 					'aqi10', 'aqi30', 'aqi1', 'aqi6', 'aqi24', 'aqi7',
 					'pm10', 'pm30', 'pm1', 'pm6', 'pm24', 'pm7',
@@ -358,6 +267,12 @@ def purpleAirResponse(resp, data) {
 }
 
 def parsePurpleAir(response) {
+	if (!response.results[0]?.Stats || !response.results[1]?.Stats) {
+    	log.error "Invalid API response: ${response}"
+        return
+    }
+    
+    // Interestingly all the values in Stats are numbers, while everything else in results are strings
     def stats = [:]
     if (response.results[0]?.Stats) { stats[0] = new JsonSlurper().parseText(response.results[0].Stats) }
 	if (response.results[1]?.Stats) { stats[1] = new JsonSlurper().parseText(response.results[1].Stats) }
@@ -414,7 +329,7 @@ def parsePurpleAir(response) {
             pm6  = roundIt(((stats[0].v4 + stats[1].v4 ) / 2.0), 2)
             pm24 = roundIt(((stats[0].v5 + stats[1].v5 ) / 2.0), 2)
             pm7  = roundIt(((stats[0].v6 + stats[1].v6 ) / 2.0), 2)
- 			rssi = roundIt(((response.results[0].RSSI.toBigDecimal() + response.results[1].RSSI.toBigDecimal()) / 2.0), 0)
+ 			if (response.results[0].RSSI?.isNumber() && response.results[1].RSSI?.isNumber()) rssi = roundIt(((response.results[0].RSSI.toBigDecimal() + response.results[1].RSSI.toBigDecimal()) / 2.0), 0)
         } else {
         	pm   = roundIt(stats[single].v, 2)
             pm10 = roundIt(stats[single].v1, 2)
@@ -431,7 +346,8 @@ def parsePurpleAir(response) {
     }
 
     if (single >= 0) {
-        def aqi   = roundIt(pm_to_aqi(pm), 1)
+        def aqi   = roundIt(pm_to_aqi(pm), 0)
+        //if (aqi < 1.0) aqi = roundIt(aqi,0)		// to avoid displaying ".4" when it should display "0.4"
         def aqi10 = roundIt(pm_to_aqi(pm10), 0)
         def aqi30 = roundIt(pm_to_aqi(pm30), 0)
         def aqi1  = roundIt(pm_to_aqi(pm1), 0)
@@ -456,7 +372,7 @@ def parsePurpleAir(response) {
 		log.info "AQI: ${aqi}"
         
         sendEvent(name: 'aqi', 	 value: aqi,   descriptionText: "AQI real time is ${aqi}")
-        sendEvent(name: 'aqiDisplay', value: "${roundIt(aqi,0)}\n${cond}", displayed: false)
+        sendEvent(name: 'aqiDisplay', value: "${aqi}\n${cond}", displayed: false)
         sendEvent(name: 'aqi10', value: aqi10, descriptionText: "AQI 10 minute average is ${aqi10}")
         sendEvent(name: 'aqi30', value: aqi30, descriptionText: "AQI 30 minute average is ${aqi30}")
         sendEvent(name: 'aqi1',  value: aqi1,  descriptionText: "AQI 1 hour average is ${aqi1}")
@@ -476,16 +392,22 @@ def parsePurpleAir(response) {
     }
 
     sendEvent(name: 'locationName', value: response.results[0].Label)
-    def temperature = roundIt((response.results[0].temp_f.toBigDecimal() + response.results[1].temp_f.toBigDecimal()) / 2.0, 1)
+    def temperature 
+    if (response.results[0].temp_f?.isNumber() && response.results[1].temp_f?.isNumber()) 
+    	temperature = roundIt(((response.results[0].temp_f.toBigDecimal() + response.results[1].temp_f.toBigDecimal()) / 2.0), 1)
     sendEvent(name: 'temperature', value: temperature, unit: 'F')
     sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: 'F', displayed: false)
-    def humidity = roundIt(((response.results[0].humidity.toBigDecimal() + response.results[1].humidity.toBigDecimal()) / 2.0), 0)
+    def humidity
+    if (response.results[0].humidity?.isNumber() && response.results[1].humidity?.isNumber()) 
+    	humidity = roundIt(((response.results[0].humidity.toBigDecimal() + response.results[1].humidity.toBigDecimal()) / 2.0), 0)
     sendEvent(name: 'humidity', value: humidity, unit: '%')
-    def pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2)
+    def pressure
+    if (response.results[0].pressure?.isNumber() && response.results[1].pressure?.isNumber()) 
+    	pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2)
     sendEvent(name: 'pressure', value: pressure, unit: 'inHg', displayed: false)
     sendEvent(name: 'pressureDisplay', value: pressure+'\ninHg', unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
     
-    def now = new Date(newest).format('HH:mm:ss MM/dd/yyyy', location.timeZone)
+    def now = new Date(newest).format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
     if (single < 2) {
     	now = now + '\nBad data from ' + ((single<0)?'BOTH channels':((single==0)?'Channel B':'Channel A'))
     }
@@ -529,6 +451,24 @@ private def remap(value, fromLow, fromHigh, toLow, toHigh) {
     // Re-zero back to the to range
     return tmpValue + toLow;
 }
-private def roundIt( value, decimals ) {
-	return (value == null) ? '--' : value.toBigDecimal().setScale(decimals, BigDecimal.ROUND_HALF_UP) 
+private roundIt( value, decimals=0 ) {
+	return (value == null) ? null : value.toBigDecimal().setScale(decimals, BigDecimal.ROUND_HALF_UP) 
+}
+private roundIt( BigDecimal value, decimals=0) {
+    return (value == null) ? null : value.setScale(decimals, BigDecimal.ROUND_HALF_UP) 
+}
+private def getAqiColors() {
+	[	// Gradients don't work well - best to keep colors solid for each range
+    	[value:   0, color: '#44b621'],		// Green - Good
+        [value:  50, color: '#44b621'],
+        [value:  51, color: '#f1d801'],		// Yellow - Moderate
+        [value: 100, color: '#f1d801'],
+        [value: 101, color: '#d04e00'],		// Orange - Unhealthy for Sensitive groups
+        [value: 150, color: '#d04e00'],
+        [value: 151, color: '#bc2323'],		// Red - Unhealthy
+        [value: 200, color: '#bc2323'],
+        [value: 201, color: '#800080'],		// Purple - Very Unhealthy
+        [value: 300, color: '#800080'],
+        [value: 301, color: '#800000']		// Maroon - Hazardous
+    ]
 }
