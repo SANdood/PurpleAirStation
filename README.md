@@ -25,6 +25,10 @@ That's it - save, and you should be up and running!
 *	1.0.04 - Updated icons & color handling
 *	1.0.05 - Now uses BigDecimal for maximum precision
 *	1.0.06 - Finalized conversion to BigDecimal
+*	1.0.07 - Better error handling
+*	1.0.08 - Changed all numberic attributes to "number"
+*	1.0.09 - Changed to maintain and display only integer AQI (decimals are distracting)
+*	1.0.10 - Fixed room/thing tile display
 
 #### Donations
 As always, my contributions to the SmartThings community are entirely free, but should you feel compelled to make a donation, you can do so here: https://paypal.me/BarryABurke
