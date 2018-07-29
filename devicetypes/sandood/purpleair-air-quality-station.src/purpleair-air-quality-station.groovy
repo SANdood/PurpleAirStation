@@ -29,13 +29,14 @@
 *	1.0.07 - Better error handling
 *	1.0.08 - Changed all numberic attributes to "number"
 *	1.0.09 - Changed to maintain and display only integer AQI (decimals are distracting)
+*	1.0.10 - Fixed room/thing tile display
 *
 */
 include 'asynchttp_v1'
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.0.09" }
+def getVersionNum() { return "1.0.10" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
@@ -177,8 +178,8 @@ metadata {
                 [value: 100, color: "#ff66ff"]
             ] )
 		}
-       // main(["aqiDisplay"])
-        main(['airQualityIndex'])
+       main(["aqiDisplay"])
+        //main(['airQualityIndex'])
         details([	"airQualityIndex",
 					'aqi10', 'aqi30', 'aqi1', 'aqi6', 'aqi24', 'aqi7',
 					'pm10', 'pm30', 'pm1', 'pm6', 'pm24', 'pm7',
