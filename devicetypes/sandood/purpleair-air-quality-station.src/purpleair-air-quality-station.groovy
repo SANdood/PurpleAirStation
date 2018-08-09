@@ -27,16 +27,17 @@
 *	1.0.05 - Now use BigDecimal for maximum precision
 *	1.0.06 - Finalized conversion to BigDecimal
 *	1.0.07 - Better error handling
-*	1.0.08 - Changed all numberic attributes to "number"
+*	1.0.08 - Changed all numeric attributes to "number"
 *	1.0.09 - Changed to maintain and display only integer AQI (decimals are distracting)
 *	1.0.10 - Fixed room/thing tile display
+*	1.0.11 - Handles Internal PurpleAir Sensor (only 1 sensor by design)
 *
 */
 include 'asynchttp_v1'
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.0.10" }
+def getVersionNum() { return "1.0.11" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
@@ -178,8 +179,8 @@ metadata {
                 [value: 100, color: "#ff66ff"]
             ] )
 		}
-       main(["aqiDisplay"])
-        //main(['airQualityIndex'])
+       //main(["aqiDisplay"])
+        main(['airQualityIndex'])
         details([	"airQualityIndex",
 					'aqi10', 'aqi30', 'aqi1', 'aqi6', 'aqi24', 'aqi7',
 					'pm10', 'pm30', 'pm1', 'pm6', 'pm24', 'pm7',
@@ -268,15 +269,15 @@ def purpleAirResponse(resp, data) {
 }
 
 def parsePurpleAir(response) {
-	if (!response.results[0]?.Stats || !response.results[1]?.Stats) {
+	if (!response.results[0]?.Stats && !response.results[1]?.Stats) {
     	log.error "Invalid API response: ${response}"
         return
     }
     
     // Interestingly all the values in Stats are numbers, while everything else in results are strings
     def stats = [:]
-    if (response.results[0]?.Stats) { stats[0] = new JsonSlurper().parseText(response.results[0].Stats) }
-	if (response.results[1]?.Stats) { stats[1] = new JsonSlurper().parseText(response.results[1].Stats) }
+    stats[0] = (response.results[0]?.Stats) ? new JsonSlurper().parseText(response.results[0].Stats) : [:]
+	stats[1] = (response.results[1]?.Stats) ? new JsonSlurper().parseText(response.results[1].Stats) : [:]
 
 	// check age of the data
     Long newest = ((stats[0]?.lastModified?.toLong() > stats[1]?.lastModified?.toLong()) ? stats[0].lastModified.toLong() : stats[1].lastModified.toLong())
@@ -294,8 +295,8 @@ def parsePurpleAir(response) {
     
     // log.debug stats
     def single = null
-	if (response.results[0].A_H) {
-        if (response.results[1].A_H) {
+	if (response.results[0]?.A_H || (stats[0]==[:])) {
+        if (response.results[1]?.A_H || (stats[1]==[:])) {
         	// A bad, B bad
             single = -1
         } else {
@@ -304,7 +305,7 @@ def parsePurpleAir(response) {
         }
     } else {
     	// Channel A is good
-    	if (response.results[1].A_H) {
+    	if (response.results[1]?.A_H || (stats[1]==[:])) {
         	// A good, B bad
         	single = 0
         } else {
@@ -312,7 +313,7 @@ def parsePurpleAir(response) {
             single = 2
         }
     }
-	//log.info "Single: ${single}"
+	log.info "Single: ${single}"
     def pm
     def pm10
     def pm30
@@ -409,7 +410,7 @@ def parsePurpleAir(response) {
     sendEvent(name: 'pressureDisplay', value: pressure+'\ninHg', unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
     
     def now = new Date(newest).format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
-    if (single < 2) {
+    if ((single < 2) && (stats[0] != [:]) && (stats[1] != [:])) {
     	now = now + '\nBad data from ' + ((single<0)?'BOTH channels':((single==0)?'Channel B':'Channel A'))
     }
     sendEvent(name: 'rssi', value: rssi, unit: 'db', descriptionText: "WiFi RSSI is ${rssi}db")
