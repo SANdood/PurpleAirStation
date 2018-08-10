@@ -30,14 +30,15 @@
 *	1.0.08 - Changed all numeric attributes to "number"
 *	1.0.09 - Changed to maintain and display only integer AQI (decimals are distracting)
 *	1.0.10 - Fixed room/thing tile display
-*	1.0.11 - Handles Internal PurpleAir Sensor (only 1 sensor by design)
+*	1.0.11 - Handles Inside PurpleAir Sensor (only 1 sensor by design)
+*	1.0.12 - Internal cleanup of Inside sensor support, added runEvery3Minutes
 *
 */
 include 'asynchttp_v1'
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.0.11" }
+def getVersionNum() { return "1.0.12" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
@@ -77,18 +78,18 @@ metadata {
     preferences {
 		input(name: "purpleID", type: "text", title: "${getVersionLabel()}\n\nPurpleAir Station ID", required: true, displayDuringSetup: true, description: 'Specify desired PurpleAir Station ID')
     	input(name: 'updateMins', type: 'enum', description: "Select the update frequency", 
-        	title: "Update frequency (minutes)", displayDuringSetup: true, defaultValue: '5', options: ['1','5','10','15','30'], required: true)
+        	title: "Update frequency (minutes)", displayDuringSetup: true, defaultValue: '5', options: ['1','3','5','10','15','30'], required: true)
     }
     
     tiles(scale: 2) {
         multiAttributeTile(name:"airQualityIndex", type:"generic", width:6, height:4, canChangeIcon: false) {
             tileAttribute("device.airQualityIndex", key: "PRIMARY_CONTROL") {
-                attributeState("default", label:'${currentValue}', /*action: 'noOp',*/ defaultValue: true, 
+                attributeState("airQualityIndex", label:'${currentValue}', defaultState: true, 
 					backgroundColors: (aqiColors)
 				)
 			}
             tileAttribute("device.message", key: "SECONDARY_CONTROL" ) {
-				attributeState('default', label: '${currentValue}', defaultValue: true, icon: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/images/purpleair.png")
+				attributeState('default', label: '${currentValue}', defaultState: true, icon: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/images/purpleair.png")
 			}
         }   
 		valueTile('aqi', 'device.aqi', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
@@ -226,6 +227,13 @@ def initialize() {
 	getPurpleAirAQI()
 }
 
+def runEvery3Minutes(handler) {
+	Random rand = new Random()
+    int randomSeconds = rand.nextInt(59)
+    log.info "AQI seconds: ${randomSeconds}"
+	schedule("${randomSeconds} 0/3 * * * ?", handler)
+}
+
 // handle commands
 def poll() { refresh() }
 def refresh() { getPurpleAirAQI() }
@@ -251,7 +259,7 @@ def purpleAirResponse(resp, data) {
 		try {
 			if (resp.json) {
 				//log.trace "Response: ${resp.json}"
-                log.info "Good data..."
+                log.info "purpleAirResponse() got JSON..."
 			} else {
             	// FAIL - no data
                 log.warn "purpleAirResponse() no JSON: ${resp.data}"
@@ -273,44 +281,60 @@ def parsePurpleAir(response) {
     	log.error "Invalid API response: ${response}"
         return
     }
+    //log.debug response
+    log.info "Parsing PurpleAir ${response.results[0].DEVICE_LOCATIONTYPE} sensor report"
     
     // Interestingly all the values in Stats are numbers, while everything else in results are strings
     def stats = [:]
+    Long newest
+    def single = null
     stats[0] = (response.results[0]?.Stats) ? new JsonSlurper().parseText(response.results[0].Stats) : [:]
-	stats[1] = (response.results[1]?.Stats) ? new JsonSlurper().parseText(response.results[1].Stats) : [:]
-
-	// check age of the data
-    Long newest = ((stats[0]?.lastModified?.toLong() > stats[1]?.lastModified?.toLong()) ? stats[0].lastModified.toLong() : stats[1].lastModified.toLong())
-    if (newest.toString() == device.currentValue('timestamp')) { log.info "No updates..."; return; } // nothing has changed yet
+    if (response.results[0].DEVICE_LOCATIONTYPE != 'inside') {
+		stats[1] = (response.results[1]?.Stats) ? new JsonSlurper().parseText(response.results[1].Stats) : [:]
+        newest = ((stats[0]?.lastModified?.toLong() > stats[1]?.lastModified?.toLong()) ? stats[0].lastModified.toLong() : stats[1].lastModified.toLong())
+    } else {
+    	stats[1] = [:]
+        if (!response.results[1]?.A_H && (stats[0] != [:])) {
+        	single = 0
+            newest = stats[0]?.lastModified?.toLong()
+        } else {
+        	single = -1		// we only have A, and it's bad
+        }
+    }
+    //log.debug "newest: ${newest}, timestamp: ${device.currentValue('timestamp')}"
+    if (newest?.toString() == device.currentValue('timestamp')) { log.info "No update..."; return; } // nothing has changed yet
     
     Long age = now() - newest
     String oldData = ''
-    if	    (age > 604800000)	oldData = '1 week'
-    else if (age > 172800000)	oldData = '2 days'
-    else if (age > 86400000)	oldData = '1 day'
-    else if (age > 43200000) 	oldData = '12 hours'
-    else if (age > 3600000) 	oldData = '1 hour'
-    else if (age > 300000)		oldData = '5 minutes'
-    if (oldData != '') oldData = 'WARNING: No updates for more than ' + oldData
+    if (age > 300000) {
+        if	    (age > 604800000)	oldData = '1 week'
+        else if (age > 172800000)	oldData = '2 days'
+        else if (age > 86400000)	oldData = '1 day'
+        else if (age > 43200000) 	oldData = '12 hours'
+        else if (age > 3600000) 	oldData = '1 hour'
+        else if (age > 300000)		oldData = '5 minutes'
+        if (oldData != '') oldData = 'WARNING: No updates for more than ' + oldData
+    }
     
-    // log.debug stats
-    def single = null
-	if (response.results[0]?.A_H || (stats[0]==[:])) {
-        if (response.results[1]?.A_H || (stats[1]==[:])) {
-        	// A bad, B bad
-            single = -1
+    //log.debug stats
+    if (single == null) {
+        if (response.results[0]?.A_H || (stats[0]==[:])) {
+            if (response.results[1]?.A_H || (stats[1]==[:])) {
+                // A bad, B bad
+                single = -1
+            } else {
+                // A bad, B good
+                single = 1
+            }
         } else {
-        	// A bad, B good
-        	single = 1
-        }
-    } else {
-    	// Channel A is good
-    	if (response.results[1]?.A_H || (stats[1]==[:])) {
-        	// A good, B bad
-        	single = 0
-        } else {
-        	// A good, B good
-            single = 2
+            // Channel A is good
+            if (response.results[1]?.A_H || (stats[1]==[:])) {
+                // A good, B bad
+                single = 0
+            } else {
+                // A good, B good
+                single = 2
+            }
         }
     }
 	log.info "Single: ${single}"
@@ -393,7 +417,6 @@ def parsePurpleAir(response) {
     	sendEvent(name: 'message', value: oldData) // ERROR
     }
 
-    sendEvent(name: 'locationName', value: response.results[0].Label)
     def temperature 
     if (response.results[0].temp_f?.isNumber() && response.results[1].temp_f?.isNumber()) 
     	temperature = roundIt(((response.results[0].temp_f.toBigDecimal() + response.results[1].temp_f.toBigDecimal()) / 2.0), 1)
@@ -410,9 +433,17 @@ def parsePurpleAir(response) {
     sendEvent(name: 'pressureDisplay', value: pressure+'\ninHg', unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
     
     def now = new Date(newest).format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
-    if ((single < 2) && (stats[0] != [:]) && (stats[1] != [:])) {
-    	now = now + '\nBad data from ' + ((single<0)?'BOTH channels':((single==0)?'Channel B':'Channel A'))
+    def locLabel = response.results[0].Label
+    if (response.results[0].DEVICE_LOCATIONTYPE != 'inside') {
+    	if (single < 2) {
+    		locLabel = locLabel + '\nBad data from ' + ((single<0)?'BOTH channels':((single==0)?'Channel B':'Channel A'))
+    	}
+    } else {
+    	if (single < 0) {
+        	locLabel = locLabel + '\nBad data from ONLY channel (A)'
+        }
     }
+    sendEvent(name: 'locationName', value: locLabel)
     sendEvent(name: 'rssi', value: rssi, unit: 'db', descriptionText: "WiFi RSSI is ${rssi}db")
     sendEvent(name: 'ID', value: response.results[0].ID, descriptionText: "Purple Air Station ID is ${response.results[0].ID}")
     sendEvent(name: 'updated', value: now, displayed: false)
