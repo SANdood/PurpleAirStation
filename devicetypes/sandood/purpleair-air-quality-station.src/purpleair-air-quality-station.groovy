@@ -32,13 +32,16 @@
 *	1.0.10 - Fixed room/thing tile display
 *	1.0.11 - Handles Inside PurpleAir Sensor (only 1 sensor by design)
 *	1.0.12 - Internal cleanup of Inside sensor support, added runEvery3Minutes
+*	1.0.13 - Code annotations for hubitat users
 *
 */
+// If building on/for hubitat, comment out the next line
 include 'asynchttp_v1'
+
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.0.12" }
+def getVersionNum() { return "1.0.13" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
@@ -251,7 +254,9 @@ void getPurpleAirAQI() {
         query: [show: settings.purpleID]
         // body: ''
     ]
-    asynchttp_v1.get(purpleAirResponse, params)
+    // If building on/for hubitat, comment out the next line, and uncomment the one after it
+    asynchttp_v1.get(purpleAirResponse, params)		// For SmartThings
+    // asynchttpget(purpleAirResponse, params)		// For hubitat
 }
 
 def purpleAirResponse(resp, data) {
@@ -294,7 +299,7 @@ def parsePurpleAir(response) {
         newest = ((stats[0]?.lastModified?.toLong() > stats[1]?.lastModified?.toLong()) ? stats[0].lastModified.toLong() : stats[1].lastModified.toLong())
     } else {
     	stats[1] = [:]
-        if (!response.results[1]?.A_H && (stats[0] != [:])) {
+        if (!response.results[0]?.A_H && (stats[0] != [:])) {
         	single = 0
             newest = stats[0]?.lastModified?.toLong()
         } else {
@@ -454,21 +459,21 @@ private def pm_to_aqi(pm) {
 	def aqi
 	if (pm > 500) {
 	  aqi = 500;
-	} else if (pm > 350.5 && pm <= 500 ) {
+	} else if (pm > 350.5) {
 	  aqi = remap(pm, 350.5, 500.5, 400, 500);
-	} else if (pm > 250.5 && pm <= 350.5 ) {
+	} else if (pm > 250.5) {
 	  aqi = remap(pm, 250.5, 350.5, 300, 400);
-	} else if (pm > 150.5 && pm <= 250.5 ) {
+	} else if (pm > 150.5) {
 	  aqi = remap(pm, 150.5, 250.5, 200, 300);
-	} else if (pm > 55.5 && pm <= 150.5 ) {
+	} else if (pm > 55.5) {
 	  aqi = remap(pm, 55.5, 150.5, 150, 200);
-	} else if (pm > 35.5 && pm <= 55.5 ) {
+	} else if (pm > 35.5) {
 	  aqi = remap(pm, 35.5, 55.5, 100, 150);
-	} else if (pm > 12 && pm <= 35.5 ) {
+	} else if (pm > 12) {
 	  aqi = remap(pm, 12, 35.5, 50, 100);
-	} else if (pm > 0 && pm <= 12 ) {
+	} else if (pm > 0) {
 	  aqi = remap(pm, 0, 12, 0, 50);
-	}
+	} else { aqi = 0 }
 	return aqi;
 }
 
