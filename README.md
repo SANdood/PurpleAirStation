@@ -11,10 +11,10 @@ To use this Air Quality Station in SmartThings, you will need to:
 3. Specify the desired PurpleAir Station ID you want to monitor
 
 To find a specific Station, 
-A. Use the PurpleAir Map to locate a station (https://www.purpleair.com/map)
-B. Open this URL in a new Window or Tab: (https://www.purpleair.com/json)
-C. Search for the NAME of the station you found in step A
-D. The Station ID is the first element in the results[:] map - you will enter this ID (1-5 digit number) into the preferences for the Air Quality Station
+1. Use the PurpleAir Map to locate a station (https://www.purpleair.com/map)
+1. Open this URL in a new Window or Tab: (https://www.purpleair.com/json)
+1. Search for the NAME of the station you found in step A
+1. The Station ID is the first element in the results[:] map - you will enter this ID (1-5 digit number) into the preferences for the Air Quality Station
 
 That's it - save, and you should be up and running!
 
