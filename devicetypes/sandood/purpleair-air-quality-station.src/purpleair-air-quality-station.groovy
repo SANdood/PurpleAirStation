@@ -33,6 +33,7 @@
 *	1.0.11 - Handles Inside PurpleAir Sensor (only 1 sensor by design)
 *	1.0.12 - Internal cleanup of Inside sensor support, added runEvery3Minutes
 *	1.0.13 - Code annotations for hubitat users
+*	1.0.14 - Added CAQI calculation for new "Air Quality Sensor" - see https://en.wikipedia.org/wiki/Air_quality_index#CAQI
 *
 */
 // If building on/for hubitat, comment out the next line
@@ -41,7 +42,7 @@ include 'asynchttp_v1'
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.0.13" }
+def getVersionNum() { return "1.0.14" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 metadata {
@@ -51,6 +52,7 @@ metadata {
         capability "Signal Strength"
         capability "Sensor"
         capability "Refresh"
+        capability "Air Quality Sensor"
 
         attribute "locationName", "string"
         attribute "ID", "string"
@@ -94,7 +96,11 @@ metadata {
             tileAttribute("device.message", key: "SECONDARY_CONTROL" ) {
 				attributeState('default', label: '${currentValue}', defaultState: true, icon: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/images/purpleair.png")
 			}
-        }   
+        }
+        valueTile('caqi', 'device.CAQI', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
+        	state 'default', label: 'CAQI\n${currentValue}', unit: "CAQI", 
+            	backgroundColors: (caqiColors)
+        }
 		valueTile('aqi', 'device.aqi', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'AQI\n${currentValue}', icon: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/images/purpleair-small.png",
             	backgroundColors: (aqiColors)
@@ -189,7 +195,8 @@ metadata {
 					'aqi10', 'aqi30', 'aqi1', 'aqi6', 'aqi24', 'aqi7',
 					'pm10', 'pm30', 'pm1', 'pm6', 'pm24', 'pm7',
 					'updated', 'locationTile', 
-					'temperature', 'humidity', 'pressure', 'rssi', 'ID', 'refresh',
+					'temperature', 'humidity', 'pressure', 'rssi', 'ID', 'caqi', 
+                    'refresh',
 				])
 	}
 }
@@ -379,6 +386,8 @@ def parsePurpleAir(response) {
     if (single >= 0) {
         def aqi   = roundIt(pm_to_aqi(pm), 0)
         //if (aqi < 1.0) aqi = roundIt(aqi,0)		// to avoid displaying ".4" when it should display "0.4"
+        
+        
         def aqi10 = roundIt(pm_to_aqi(pm10), 0)
         def aqi30 = roundIt(pm_to_aqi(pm30), 0)
         def aqi1  = roundIt(pm_to_aqi(pm1), 0)
@@ -387,6 +396,12 @@ def parsePurpleAir(response) {
         def aqi7  = roundIt(pm_to_aqi(pm7), 0)
 
         sendEvent(name: 'airQualityIndex', 	value: aqi, displayed: false)
+        
+        def caqi = roundIt(pm_to_caqi(pm1), 0)	// CAQI is based off of hourly data
+        // sendEvent(name: "CAQI", value: caqi, unit: "CAQI", displayed: true)
+		// sendEvent(name: "caqi", value: caqi, unit: "CAQI", displayed: true)
+        sendEvent(name: "airQuality", value: caqi, unit: "CAQI", displayed: true, descriptionText: "The Common Air Quality Index for the hour is ${caqi} CAQI")
+
         String p25 = roundIt(pm,1) + ' µg/m³'
         String cond = '??'
         if (oldData == '') {
@@ -477,6 +492,20 @@ private def pm_to_aqi(pm) {
 	return aqi;
 }
 
+private def pm_to_caqi(pm) {
+	def caqi					// based off of (hourly) pm2.5 only
+	if (pm > 110) {
+	  caqi = 100;
+	} else if (pm > 55) {
+	  caqi = remap(pm, 55, 110, 75, 100);
+	} else if (pm > 30) {
+	  caqi = remap(pm, 30, 55, 50, 75);
+	} else if (pm > 15) {
+	  caqi = remap(pm, 15, 30, 25, 50);
+    } else caqi = remap(pm, 0, 15, 0, 25);
+	return caqi;
+}
+
 private def remap(value, fromLow, fromHigh, toLow, toHigh) {
     def fromRange = fromHigh - fromLow;
     def toRange = toHigh - toLow;
@@ -508,5 +537,19 @@ private def getAqiColors() {
         [value: 201, color: '#800080'],		// Purple - Very Unhealthy
         [value: 300, color: '#800080'],
         [value: 301, color: '#800000']		// Maroon - Hazardous
+    ]
+}
+private def getCaqiColors() {
+	// Common Air Quality Index
+	[
+    	[value:   0, color: '#79bc6a'],		// Green - Very Low
+        [value:  24, color: '#79bc6a'],
+        [value:  25, color: '#bbcf4c'],		// Chartruese - Low
+        [value:  49, color: '#bbcf4c'],
+        [value:  50, color: '#eec20b'],		// Yellow - Medium
+        [value:  74, color: '#eec20b'],
+        [value:  75, color: '#f29305'],		// Orange - High
+        [value:  99, color: '#f29305'],
+        [value: 100, color: '#e8416f']		// Red - Very High
     ]
 }
