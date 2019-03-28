@@ -33,6 +33,7 @@ That's it - save, and you should be up and running!
 *	1.0.11 - Handles Inside PurpleAir Sensor (only 1 sensor by design)
 *	1.0.12 - Internal cleanup of Inside sensor support, added runEvery3Minutes
 *	1.0.13 - Code annotations for hubitat users
+* 1.1.01 - Added automatic support for both SmartThings and Hubitat
 
 #### Donations
 As always, my contributions to the SmartThings community are entirely free, but should you feel compelled to make a donation, you can do so here: https://paypal.me/BarryABurke
