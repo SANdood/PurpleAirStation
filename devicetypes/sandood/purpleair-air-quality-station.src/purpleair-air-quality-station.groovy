@@ -35,6 +35,7 @@
 *	1.0.13 - Code annotations for hubitat users
 *	1.0.14 - Added CAQI calculation for new "Air Quality Sensor" - see https://en.wikipedia.org/wiki/Air_quality_index#CAQI
 *	1.1.01 - Added automatic support for both SmartThings and Hubitat
+*	1.1.02 - Fix null response handling
 *
 */
 import groovy.json.JsonSlurper
@@ -482,16 +483,16 @@ def parsePurpleAir(response) {
     }
 
     def temperature 
-    if (response.results[0].temp_f?.isNumber() && response.results[1].temp_f?.isNumber()) 
+    if (response?.results[0]?.temp_f?.isNumber() && response?.results[1]?.temp_f?.isNumber()) 
     	temperature = roundIt(((response.results[0].temp_f.toBigDecimal() + response.results[1].temp_f.toBigDecimal()) / 2.0), 1)
     sendEvent(name: 'temperature', value: temperature, unit: 'F')
     sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: 'F', displayed: false)
     def humidity
-    if (response.results[0].humidity?.isNumber() && response.results[1].humidity?.isNumber()) 
+    if (response?.results[0]?.humidity?.isNumber() && response?.results[1]?.humidity?.isNumber()) 
     	humidity = roundIt(((response.results[0].humidity.toBigDecimal() + response.results[1].humidity.toBigDecimal()) / 2.0), 0)
     sendEvent(name: 'humidity', value: humidity, unit: '%')
     def pressure
-    if (response.results[0].pressure?.isNumber() && response.results[1].pressure?.isNumber()) 
+    if (response?.results[0]?.pressure?.isNumber() && response?.results[1]?.pressure?.isNumber()) 
     	pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2)
     sendEvent(name: 'pressure', value: pressure, unit: 'inHg', displayed: false)
     sendEvent(name: 'pressureDisplay', value: pressure+'\ninHg', unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
