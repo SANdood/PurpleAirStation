@@ -4,9 +4,11 @@ PurpleAir Air Quality Station for SmartThings
 Provides continuously updated Air Quality Index based on the PM2.5 data supplied by a Purple Air air quality sensor (see www.purpleair.com for more information).
 ### Simple Setup
 To use this Air Quality Station in SmartThings, you will need to:
-1. Create a new SmartThings device handler using the supplied source code 
-  - Edit the code in 2 places if using hubitat - search for "hubitat"
-2. Create the actual device: log into the IDE, select your Location, select Devices and then select Create New Device
+1. Create a new SmartThings device handler or Hubitat Driverusing the supplied source code 
+  - This version auto-detects the host platform, so no further editing is required.
+2. Create the actual device: 
+- SmartThings: log into the IDE, select your Location, select Devices and then select Create New Device
+- Hubitat: Simply create a new Driver from the main menu
 2. Specify your preference for update frequency
 3. Specify the desired PurpleAir Station ID you want to monitor
 
@@ -34,6 +36,7 @@ That's it - save, and you should be up and running!
 *	1.0.12 - Internal cleanup of Inside sensor support, added runEvery3Minutes
 *	1.0.13 - Code annotations for hubitat users
 * 1.1.01 - Added automatic support for both SmartThings and Hubitat
+* 1.1.02 - Fixed null response handling (I think)
 
 #### Donations
 As always, my contributions to the SmartThings community are entirely free, but should you feel compelled to make a donation, you can do so here: https://paypal.me/BarryABurke
