@@ -35,13 +35,13 @@
 *	1.0.13 - Code annotations for hubitat users
 *	1.0.14 - Added CAQI calculation for new "Air Quality Sensor" - see https://en.wikipedia.org/wiki/Air_quality_index#CAQI
 *	1.1.01 - Added automatic support for both SmartThings and Hubitat
-*	1.1.02 - Fix null response handling
+*	1.1.02a- Fix null response handling
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.01" }
+def getVersionNum() { return "1.1.02a" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -334,7 +334,7 @@ def purpleAirResponse(resp, data) {
 }
 
 def parsePurpleAir(response) {
-	if (!response.results[0]?.Stats && !response.results[1]?.Stats) {
+	if (!response || (!response.results[0]?.Stats && !response.results[1]?.Stats)) {
     	log.error "Invalid API response: ${response}"
         return
     }
@@ -482,24 +482,35 @@ def parsePurpleAir(response) {
     	sendEvent(name: 'message', value: oldData) // ERROR
     }
 
-    def temperature 
-    if (response?.results[0]?.temp_f?.isNumber() && response?.results[1]?.temp_f?.isNumber()) 
-    	temperature = roundIt(((response.results[0].temp_f.toBigDecimal() + response.results[1].temp_f.toBigDecimal()) / 2.0), 1)
-    sendEvent(name: 'temperature', value: temperature, unit: 'F')
-    sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: 'F', displayed: false)
+    def temperature
     def humidity
-    if (response?.results[0]?.humidity?.isNumber() && response?.results[1]?.humidity?.isNumber()) 
-    	humidity = roundIt(((response.results[0].humidity.toBigDecimal() + response.results[1].humidity.toBigDecimal()) / 2.0), 0)
-    sendEvent(name: 'humidity', value: humidity, unit: '%')
     def pressure
-    if (response?.results[0]?.pressure?.isNumber() && response?.results[1]?.pressure?.isNumber()) 
-    	pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2)
-    sendEvent(name: 'pressure', value: pressure, unit: 'inHg', displayed: false)
-    sendEvent(name: 'pressureDisplay', value: pressure+'\ninHg', unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
+    if (single >= 0) {
+    	if (single == 2) {
+            if (response.results[0]?.temp_f?.isNumber() && response.results[1]?.temp_f?.isNumber()) 
+                temperature = roundIt(((response.results[0].temp_f.toBigDecimal() + response.results[1].temp_f.toBigDecimal()) / 2.0), 1)
+            if (response.results[0]?.humidity?.isNumber() && response.results[1]?.humidity?.isNumber()) 
+                humidity = roundIt(((response.results[0].humidity.toBigDecimal() + response.results[1].humidity.toBigDecimal()) / 2.0), 0)
+            if (response.results[0]?.pressure?.isNumber() && response.results[1]?.pressure?.isNumber()) 
+                pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2)
+		} else {	// single == 0 or single == 1
+        	if (response.results[single]?.temp_f?.isNumber()) 
+                temperature = roundIt(response.results[single].temp_f.toBigDecimal(), 1)
+            if (response.results[single]?.humidity?.isNumber()) 
+                humidity = roundIt(response.results[single].humidity.toBigDecimal(), 0)
+            if (response.results[single]?.pressure?.isNumber()) 
+                pressure = roundIt((response.results[single].pressure.toBigDecimal() * 0.02953), 2)
+        }
+        sendEvent(name: 'temperature', value: temperature, unit: 'F')
+        sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: 'F', displayed: false)
+        sendEvent(name: 'humidity', value: humidity, unit: '%')
+        sendEvent(name: 'pressure', value: pressure, unit: 'inHg', displayed: false)
+        sendEvent(name: 'pressureDisplay', value: pressure+'\ninHg', unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
+    }
     
     def now = new Date(newest).format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
-    def locLabel = response.results[0].Label
-    if (response.results[0].DEVICE_LOCATIONTYPE != 'inside') {
+    def locLabel = response.results[0]?.Label
+    if (response.results[0]?.DEVICE_LOCATIONTYPE != 'inside') {
     	if (single < 2) {
     		locLabel = locLabel + '\nBad data from ' + ((single<0)?'BOTH channels':((single==0)?'Channel B':'Channel A'))
     	}
@@ -510,7 +521,7 @@ def parsePurpleAir(response) {
     }
     sendEvent(name: 'locationName', value: locLabel)
     sendEvent(name: 'rssi', value: rssi, unit: 'db', descriptionText: "WiFi RSSI is ${rssi}db")
-    sendEvent(name: 'ID', value: response.results[0].ID, descriptionText: "Purple Air Station ID is ${response.results[0].ID}")
+    sendEvent(name: 'ID', value: response.results[0]?.ID, descriptionText: "Purple Air Station ID is ${response.results[0]?.ID}")
     sendEvent(name: 'updated', value: now, displayed: false)
     sendEvent(name: 'timestamp', value: newest.toString(), displayed: false)	// Send last
 }
