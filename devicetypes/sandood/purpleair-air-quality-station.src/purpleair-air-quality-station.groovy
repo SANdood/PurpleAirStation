@@ -36,12 +36,13 @@
 *	1.0.14 - Added CAQI calculation for new "Air Quality Sensor" - see https://en.wikipedia.org/wiki/Air_quality_index#CAQI
 *	1.1.01 - Added automatic support for both SmartThings and Hubitat
 *	1.1.02a- Fix null response handling
+*	1.1.03 - Fixed descriptionText:
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.02a" }
+def getVersionNum() { return "1.1.03" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -457,7 +458,7 @@ def parsePurpleAir(response) {
             else if (aqi < 301) {sendEvent(name: 'message', value: " VERY UNHEALTHY: serious effects for everyone (${p25})", descriptionText: 'AQI is VERY UNHEALTHY - serious effects for everyone'); cond = 'VERY UNHEALTHY';}
             else 				{sendEvent(name: 'message', value: " HAZARDOUS: emergency conditions for everyone (${p25})", descriptionText: 'AQI is HAZARDOUS - emergency conditions for everyone'); cond = 'HAZARDOUS';}
         } else {
-            sendEvent(name: 'message', value: oldData, descriptionText = "No updates for ${roundIt((age/60000),2)} minutes")
+            sendEvent(name: 'message', value: oldData, descriptionText: "No updates for ${roundIt((age/60000),2)} minutes")
             log.error "No updates for ${roundIt((age/60000),2)} minutes"
         }
 		log.info "AQI: ${aqi}"
