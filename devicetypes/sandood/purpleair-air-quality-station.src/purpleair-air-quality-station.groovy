@@ -37,12 +37,13 @@
 *	1.1.01 - Added automatic support for both SmartThings and Hubitat
 *	1.1.02a- Fix null response handling
 *	1.1.03 - Fixed descriptionText:
+*   1.1.04 - Fixed incorrect collection of temperature, humidity and pressure where both sensors are not available
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.03" }
+def getVersionNum() { return "1.1.04" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -486,25 +487,42 @@ def parsePurpleAir(response) {
     def temperature
     def humidity
     def pressure
-    if (single >= 0) {
-    	if (single == 2) {
-            if (response.results[0]?.temp_f?.isNumber() && response.results[1]?.temp_f?.isNumber()) 
-                temperature = roundIt(((response.results[0].temp_f.toBigDecimal() + response.results[1].temp_f.toBigDecimal()) / 2.0), 1)
-            if (response.results[0]?.humidity?.isNumber() && response.results[1]?.humidity?.isNumber()) 
-                humidity = roundIt(((response.results[0].humidity.toBigDecimal() + response.results[1].humidity.toBigDecimal()) / 2.0), 0)
-            if (response.results[0]?.pressure?.isNumber() && response.results[1]?.pressure?.isNumber()) 
-                pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2)
-		} else {	// single == 0 or single == 1
-        	if (response.results[single]?.temp_f?.isNumber()) 
-                temperature = roundIt(response.results[single].temp_f.toBigDecimal(), 1)
-            if (response.results[single]?.humidity?.isNumber()) 
-                humidity = roundIt(response.results[single].humidity.toBigDecimal(), 0)
-            if (response.results[single]?.pressure?.isNumber()) 
-                pressure = roundIt((response.results[single].pressure.toBigDecimal() * 0.02953), 2)
-        }
+ 
+    // Collect Temperature - may be on one, the other or both sensors
+    if (response.results[0]?.temp_f?.isNumber()) {
+        temperature = roundIt(response.results[0].temp_f.toBigDecimal(), 1)
+        if (response.results[1]?.temp_f?.isNumber())
+            temperature = roundIt((temperature + response.results[1].temp_f.toBigDecimal()) / 2.0, 1)
+    }
+    else if (response.results[1]?.temp_f?.isNumber())
+        temperature = roundIt(response.results[1].temp_f.toBigDecimal(), 1)
+
+    // Collect Humidity - may be on one, the other or both sensors
+    if (response.results[0]?.humidity?.isNumber()) {
+        humidity = roundIt(response.results[0].humidity.toBigDecimal(), 0)
+        if (response.results[1]?.humidity?.isNumber())
+            humidity = roundIt(((humidity + response.results[1].humidity.toBigDecimal()) / 2.0), 0) 
+    }
+    else if (response.results[1]?.humidity?.isNumber())
+        humidity = roundIt(response.results[1].humidity.toBigDecimal(), 0)
+
+    // collect Pressure - may be on one, the other or both sensors
+    if (response.results[0]?.pressure?.isNumber()) {
+        pressure = roundIt((response.results[0].pressure.toBigDecimal() * 0.02953), 2)
+        if (response.results[1]?.humidity?.isNumber())
+            pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2) 
+    }
+    else if (response.results[1]?.pressure?.isNumber())
+        pressure = roundIt((response.results[1].pressure.toBigDecimal() * 0.02953), 2)
+
+    if (temperature != null) {
         sendEvent(name: 'temperature', value: temperature, unit: 'F')
         sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: 'F', displayed: false)
+    }
+    if (humidity != null) {
         sendEvent(name: 'humidity', value: humidity, unit: '%')
+    }
+    if (pressure != null) {
         sendEvent(name: 'pressure', value: pressure, unit: 'inHg', displayed: false)
         sendEvent(name: 'pressureDisplay', value: pressure+'\ninHg', unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
     }
