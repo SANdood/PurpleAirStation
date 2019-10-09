@@ -38,12 +38,13 @@
 *	1.1.02a- Fix null response handling
 *	1.1.03 - Fixed descriptionText:
 *   1.1.04 - Fixed incorrect collection of temperature, humidity and pressure where both sensors are not available
+*	1.1.05 - Added optional debug logging preference setting
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.04" }
+def getVersionNum() { return "1.1.05" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -117,6 +118,7 @@ metadata {
 		input(name: "purpleID", type: "text", title: "${getVersionLabel()}\n\nPurpleAir Station ID", required: true, displayDuringSetup: true, description: 'Specify desired PurpleAir Station ID')
     	input(name: 'updateMins', type: 'enum', description: "Select the update frequency", 
         	title: "Update frequency (minutes)", displayDuringSetup: true, defaultValue: '5', options: ['1','3','5','10','15','30'], required: true)
+		input(name: 'debugOn', type: 'bool', title: "Enable debug logging?", displayDuringSetup: true, defaultValue: false)
     }
     
     tiles(scale: 2) {
@@ -318,7 +320,7 @@ def purpleAirResponse(resp, data) {
 		try {
 			if (resp.json) {
 				//log.trace "Response: ${resp.json}"
-                log.info "purpleAirResponse() got JSON..."
+                logDebug("purpleAirResponse() got JSON...")
 			} else {
             	// FAIL - no data
                 log.warn "purpleAirResponse() no JSON: ${resp.data}"
@@ -341,7 +343,7 @@ def parsePurpleAir(response) {
         return
     }
     //log.debug response
-    log.info "Parsing PurpleAir ${response.results[0].DEVICE_LOCATIONTYPE} sensor report"
+    logDebug("Parsing PurpleAir ${response.results[0].DEVICE_LOCATIONTYPE} sensor report")
     
     // Interestingly all the values in Stats are numbers, while everything else in results are strings
     def stats = [:]
@@ -361,7 +363,7 @@ def parsePurpleAir(response) {
         }
     }
     //log.debug "newest: ${newest}, timestamp: ${device.currentValue('timestamp')}"
-    if (newest?.toString() == device.currentValue('timestamp')) { log.info "No update..."; return; } // nothing has changed yet
+    if (newest?.toString() == device.currentValue('timestamp')) { logDebug("No update..."); return; } // nothing has changed yet
     
     Long age = now() - newest
     String oldData = ''
@@ -396,7 +398,7 @@ def parsePurpleAir(response) {
             }
         }
     }
-	log.info "Single: ${single}"
+	logDebug("Single: ${single}")
     def pm
     def pm10
     def pm30
@@ -462,7 +464,7 @@ def parsePurpleAir(response) {
             sendEvent(name: 'message', value: oldData, descriptionText: "No updates for ${roundIt((age/60000),2)} minutes")
             log.error "No updates for ${roundIt((age/60000),2)} minutes"
         }
-		log.info "AQI: ${aqi}"
+		log.info("AQI: ${aqi}")
         
         sendEvent(name: 'aqi', 	 value: aqi,   descriptionText: "AQI real time is ${aqi}")
         sendEvent(name: 'aqiDisplay', value: "${aqi}\n${cond}", displayed: false)
@@ -593,6 +595,8 @@ private def remap(value, fromLow, fromHigh, toLow, toHigh) {
     // Re-zero back to the to range
     return tmpValue + toLow;
 }
+private def logDebug(msg) { if (debugOn) log.debug(msg) }
+
 private roundIt( value, decimals=0 ) {
 	return (value == null) ? null : value.toBigDecimal().setScale(decimals, BigDecimal.ROUND_HALF_UP) 
 }
