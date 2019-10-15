@@ -81,7 +81,8 @@ private Boolean getIsHEHub() { (state.isHE) }					// if (isHEHub) ...
 // **************************************************************************************************************************
 
 metadata {
-    definition (name: "PurpleAir Air Quality Station", namespace: "sandood", author: "sandood") {
+    definition (name: "PurpleAir Air Quality Station", namespace: "sandood", author: "sandood", 
+				importUrl: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/devicetypes/sandood/purpleair-air-quality-station.src/purpleair-air-quality-station.groovy") {
         capability "Temperature Measurement"
         capability "Relative Humidity Measurement"
         capability "Signal Strength"
