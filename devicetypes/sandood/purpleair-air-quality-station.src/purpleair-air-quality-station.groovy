@@ -39,12 +39,13 @@
 *	1.1.03 - Fixed descriptionText:
 *   1.1.04 - Fixed incorrect collection of temperature, humidity and pressure where both sensors are not available
 *	1.1.05 - Added optional debug logging preference setting
+*	1.1.06 - Optimized temp/humidity/pressure updates
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.05" }
+def getVersionNum() { return "1.1.06" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -492,34 +493,40 @@ def parsePurpleAir(response) {
  
     // Collect Temperature - may be on one, the other or both sensors
     if (response.results[0]?.temp_f?.isNumber()) {
-        temperature = roundIt(response.results[0].temp_f.toBigDecimal(), 1)
-        if (response.results[1]?.temp_f?.isNumber())
+		if (response.results[1]?.temp_f?.isNumber()) {
             temperature = roundIt((temperature + response.results[1].temp_f.toBigDecimal()) / 2.0, 1)
-    }
-    else if (response.results[1]?.temp_f?.isNumber())
+		} else {
+			temperature = roundIt(response.results[0].temp_f.toBigDecimal(), 1)
+		}
+	} else if (response.results[1]?.temp_f?.isNumber()){
         temperature = roundIt(response.results[1].temp_f.toBigDecimal(), 1)
-
+	}
+	
     // Collect Humidity - may be on one, the other or both sensors
     if (response.results[0]?.humidity?.isNumber()) {
-        humidity = roundIt(response.results[0].humidity.toBigDecimal(), 0)
-        if (response.results[1]?.humidity?.isNumber())
+		if (response.results[1]?.humidity?.isNumber()) {
             humidity = roundIt(((humidity + response.results[1].humidity.toBigDecimal()) / 2.0), 0) 
-    }
-    else if (response.results[1]?.humidity?.isNumber())
+		} else {
+			humidity = roundIt(response.results[0].humidity.toBigDecimal(), 0)
+		}
+	} else if (response.results[1]?.humidity?.isNumber()) {
         humidity = roundIt(response.results[1].humidity.toBigDecimal(), 0)
+	}
 
     // collect Pressure - may be on one, the other or both sensors
     if (response.results[0]?.pressure?.isNumber()) {
-        pressure = roundIt((response.results[0].pressure.toBigDecimal() * 0.02953), 2)
-        if (response.results[1]?.humidity?.isNumber())
+		if (response.results[1]?.humidity?.isNumber()) {
             pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2) 
-    }
-    else if (response.results[1]?.pressure?.isNumber())
+		} else {
+			pressure = roundIt((response.results[0].pressure.toBigDecimal() * 0.02953), 2)
+		}
+	} else if (response.results[1]?.pressure?.isNumber()) {
         pressure = roundIt((response.results[1].pressure.toBigDecimal() * 0.02953), 2)
-
+	}
+	
     if (temperature != null) {
-        sendEvent(name: 'temperature', value: temperature, unit: 'F')
-        sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: 'F', displayed: false)
+        sendEvent(name: 'temperature', value: temperature, unit: '°F')
+        sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: '°F', displayed: false)
     }
     if (humidity != null) {
         sendEvent(name: 'humidity', value: humidity, unit: '%')
