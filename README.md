@@ -1,5 +1,5 @@
 # PurpleAirStation
-PurpleAir Air Quality Station for SmartThings
+PurpleAir Air Quality Station for Hubitat and SmartThings
 
 Provides continuously updated Air Quality Index based on the PM2.5 data supplied by a Purple Air air quality sensor (see www.purpleair.com for more information).
 ### Simple Setup
