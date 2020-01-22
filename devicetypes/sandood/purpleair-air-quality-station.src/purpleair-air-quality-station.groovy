@@ -40,12 +40,13 @@
 *   1.1.04 - Fixed incorrect collection of temperature, humidity and pressure where both sensors are not available
 *	1.1.05 - Added optional debug logging preference setting
 *	1.1.06 - Optimized temp/humidity/pressure updates
+*	1.1.07 - Fixed Flagged sensors, added Hidden device support (needs owners's Key)
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.06" }
+def getVersionNum() { return "1.1.07" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -81,9 +82,8 @@ private Boolean getIsHEHub() { (state.isHE) }					// if (isHEHub) ...
 // **************************************************************************************************************************
 
 metadata {
-    definition (name: "PurpleAir Air Quality Station", namespace: "sandood", author: "sandood", 
-		importUrl: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/devicetypes/sandood/purpleair-air-quality-station.src/purpleair-air-quality-station.groovy")
-	{
+    definition (name: "PurpleAir Air Quality Station", namespace: "sandood", author: "sandood",
+			    importUrl: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/devicetypes/sandood/purpleair-air-quality-station.src/purpleair-air-quality-station.groovy") {
         capability "Temperature Measurement"
         capability "Relative Humidity Measurement"
         capability "Signal Strength"
@@ -94,8 +94,10 @@ metadata {
         attribute "locationName", "string"
         attribute "ID", "string"
         attribute "pressure", "number"
+		attribute "airQuality", 'number'
         attribute "airQualityIndex", "string"
         attribute "aqi", "number"				// current AQI
+		attribute "aqiDisplay", 'string'
 		attribute "aqi10", "number"				// 10 minute average
 		attribute "aqi30", "number"				// 30 minute average
 		attribute "aqi1", "number"				// 1 hour average
@@ -109,19 +111,22 @@ metadata {
 		attribute "pm6", "number"				// 6 hour average
 		attribute "pm24", "number"				// 24 hour average
 		attribute "pm7", "number"				// 7 day average
-		attribute "rssi", "number"				// Signal Strength attribute (not supporting lqi)
+		attribute "rssi", "string"				// Signal Strength attribute (not supporting lqi)
         attribute 'message', 'string'
   		attribute "updated", "string"
         attribute "timestamp", "string"
-        
+		attribute "temperatureDisplay", 'string'
+		attribute "pressure", 'number'
+		attribute "pressureDisplay", 'string'
         command "refresh"
     }
 
     preferences {
-		input(name: "purpleID", type: "text", title: "${getVersionLabel()}\n\nPurpleAir Station ID", required: true, displayDuringSetup: true, description: 'Specify desired PurpleAir Station ID')
+		input(name: "purpleID", type: "text", title: (isHE?'<b>':'') + "PurpleAir Station ID" + (isHE?'</b>':''), required: true, displayDuringSetup: true, description: 'Enter the desired PurpleAir Station ID')
+		input(name: "purpleKey", type: "password", title: (isHE?'<b>':'') + "PurpleAir Private Key (optional)" + (isHE?'</b>':''), required: false, displayDuringSetup: true, description: "Enter the Private Key for this Station")
     	input(name: 'updateMins', type: 'enum', description: "Select the update frequency", 
-        	title: "Update frequency (minutes)", displayDuringSetup: true, defaultValue: '5', options: ['1','3','5','10','15','30'], required: true)
-		input(name: 'debugOn', type: 'bool', title: "Enable debug logging?", displayDuringSetup: true, defaultValue: false)
+        	  title: (isHE?'<b>':'') + "Update frequency (minutes)" + (isHE?'</b>':''), displayDuringSetup: true, defaultValue: '5', options: ['1','3','5','10','15','30'], required: true)
+		input(name: 'debugOn', type: 'bool', title: (isHE?'<b>':'') + "Enable debug logging?" + (isHE?'</b>':''), displayDuringSetup: true, defaultValue: false)
     }
     
     tiles(scale: 2) {
@@ -275,6 +280,11 @@ def initialize() {
 			"runEvery${t}Minutes"(getPurpleAirAQI)
 		}
 	}
+	state.isFlagged = 0
+	sendEvent(name: 'updated', value: "", displayed: false, isStateChange: true)
+    sendEvent(name: 'timestamp', value: "initializing", displayed: false, isStateChange: true)	// Send last
+	state.isHidden = false
+	
 	getPurpleAirAQI()
     log.info "Initialization complete."
 }
@@ -304,9 +314,10 @@ void getPurpleAirAQI() {
         return
     }
     def params = [
-        uri: 'https://www.purpleair.com',
-        path: '/json',
-        query: [show: settings.purpleID]
+        uri: 		'https://www.purpleair.com',
+        path: 		'/json',
+        query: 		[show: settings?.purpleID, key: settings?.purpleKey],
+		timeout:	30
         // body: ''
     ]
     // If building on/for hubitat, comment out the next line, and uncomment the one after it
@@ -322,7 +333,7 @@ def purpleAirResponse(resp, data) {
 	if (resp && (resp.status == 200)) {
 		try {
 			if (resp.json) {
-				//log.trace "Response: ${resp.json}"
+				//log.trace "Response Status: ${resp.status}\n${resp.json}"
                 logDebug("purpleAirResponse() got JSON...")
 			} else {
             	// FAIL - no data
@@ -342,11 +353,17 @@ def purpleAirResponse(resp, data) {
 
 def parsePurpleAir(response) {
 	if (!response || (!response.results[0]?.Stats && !response.results[1]?.Stats)) {
-    	log.error "Invalid API response: ${response}"
+		if (response && !settings.purpleKey) {
+			log.warn "No data returned for PurpleAir request. Perhaps you need to enter your Private Key in Preferences?"
+			return
+		}
+    	log.error "Invalid response for PurpleAir request: ${response}"
         return
     }
     //log.debug response
-    logDebug("Parsing PurpleAir ${response.results[0].DEVICE_LOCATIONTYPE} sensor report")
+	def hidden = response.results[0].Hidden
+	if (state.isHidden != hidden) state.isHidden = hidden
+	logDebug("Parsing PurpleAir ${response.results[0].DEVICE_LOCATIONTYPE}${hidden?' (hidden)':''} sensor report")
     
     // Interestingly all the values in Stats are numbers, while everything else in results are strings
     def stats = [:]
@@ -366,7 +383,8 @@ def parsePurpleAir(response) {
         }
     }
     //log.debug "newest: ${newest}, timestamp: ${device.currentValue('timestamp')}"
-    if (newest?.toString() == device.currentValue('timestamp')) { logDebug("No update..."); return; } // nothing has changed yet
+	def timeStamp = state.isST ? device.currentValue('timestamp') : device.currentValue('timestamp', true)
+    if (newest?.toString() == timeStamp) { logDebug("No update..."); return; } // nothing has changed yet
     
     Long age = now() - newest
     String oldData = ''
@@ -381,6 +399,49 @@ def parsePurpleAir(response) {
     }
     
     //log.debug stats
+	if (response.results[0]?.Flag || response.results[1].Flag) {
+		// One or both sensors are flagged for bad data
+		def isFlagged = state?.isFlagged
+		if ((isFlagged == null) || (isFlagged > 10)) isFlagged = 0
+		isFlagged++;
+		if (isFlagged == 1) log.warn "NOTICE: One of your sensors has been Flagged for sending bad data"
+		state.isFlagged = isFlagged
+			
+		single = 0
+		if (response.results[0]) {
+			if ((!response.results[0].PM2_5Value?.toBigDecimal()) &&
+				(!response.results[0].p_0_3_um?.toBigDecimal()) &&
+				 (!response.results[0].p_0_5_um?.toBigDecimal()) &&
+				  (!response.results[0].p_2_5_um?.toBigDecimal()) &&
+				   (!response.results[0].p_5_0_um?.toBigDecimal()) &&
+				    (!response.results[0].p_10_0_um?.toBigDecimal()) &&
+				     (!response.results[0].pm1_0_cf_1?.toBigDecimal()) &&
+					  (!response.results[0].pm2_5_cf_1?.toBigDecimal()) &&
+					   (!response.results[0].pm10_0_cf_1?.toBigDecimal()) &&
+						(!response.results[0].pm1_0_atm?.toBigDecimal()) &&
+						 (!response.results[0].pm2_5_atm?.toBigDecimal()) &&
+						 (!response.results[0].pm10_0_atm?.toBigDecimal())) {
+				single = 1	// A is bad
+			}
+		}
+		if ((single == 1) && (response.results[1])) {
+			if ((!response.results[1].PM2_5Value?.toBigDecimal()) &&
+				(!response.results[1].p_0_3_um?.toBigDecimal()) &&
+				 (!response.results[1].p_0_5_um?.toBigDecimal()) &&
+				  (!response.results[1].p_2_5_um?.toBigDecimal()) &&
+				   (!response.results[1].p_5_0_um?.toBigDecimal()) &&
+				    (!response.results[1].p_10_0_um?.toBigDecimal()) &&
+				     (!response.results[1].pm1_0_cf_1?.toBigDecimal()) &&
+					  (!response.results[1].pm2_5_cf_1?.toBigDecimal()) &&
+					   (!response.results[1].pm10_0_cf_1?.toBigDecimal()) &&
+						(!response.results[1].pm1_0_atm?.toBigDecimal()) &&
+						 (!response.results[1].pm2_5_atm?.toBigDecimal()) &&
+						 (!response.results[1].pm10_0_atm?.toBigDecimal())) {
+				single = -1	// both are bad
+			}
+		}
+	}
+
     if (single == null) {
         if (response.results[0]?.A_H || (stats[0]==[:])) {
             if (response.results[1]?.A_H || (stats[1]==[:])) {
@@ -419,7 +480,15 @@ def parsePurpleAir(response) {
             pm6  = roundIt(((stats[0].v4 + stats[1].v4 ) / 2.0), 2)
             pm24 = roundIt(((stats[0].v5 + stats[1].v5 ) / 2.0), 2)
             pm7  = roundIt(((stats[0].v6 + stats[1].v6 ) / 2.0), 2)
- 			if (response.results[0].RSSI?.isNumber() && response.results[1].RSSI?.isNumber()) rssi = roundIt(((response.results[0].RSSI.toBigDecimal() + response.results[1].RSSI.toBigDecimal()) / 2.0), 0)
+ 			//if (response.results[0].RSSI?.isNumber() && response.results[1].RSSI?.isNumber()) rssi = roundIt(((response.results[0].RSSI.toBigDecimal() + response.results[1].RSSI.toBigDecimal()) / 2.0), 0)
+			if (response?.results[0]?.RSSI) rssi = roundIt(response.results[0].RSSI, 0)
+			if (rssi) {
+				if (response?.results[1]?.RSSI) {
+					rssi = roundIt((rssi + response.results[1].RSSI)/2,0)
+				}
+			} else if (response?.results[1]?.RSSI) rssi = roundIt(response.results[1].RSSI, 0)
+											 
+			//rssi = roundIt(((response.results[0]?.RSSI?.toBigDecimal() + response.results[1]?.RSSI?.toBigDecimal()) / 2.0), 0)
         } else {
         	pm   = roundIt(stats[single].v, 2)
             pm10 = roundIt(stats[single].v1, 2)
@@ -428,7 +497,7 @@ def parsePurpleAir(response) {
             pm6  = roundIt(stats[single].v4, 2)
             pm24 = roundIt(stats[single].v5, 2)
             pm7  = roundIt(stats[single].v6, 2)
-            rssi = roundIt(response.results[single].RSSI, 0)
+            rssi = roundIt(response.results[single]?.RSSI, 0)
         }
     } else {
     	// No valid data...now what?
@@ -527,8 +596,8 @@ def parsePurpleAir(response) {
 	}
 	
     if (temperature != null) {
-        sendEvent(name: 'temperature', value: temperature, unit: '°F')
-        sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: '°F', displayed: false)
+        sendEvent(name: 'temperature', value: temperature, unit: 'F')
+        sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: 'F', displayed: false)
     }
     if (humidity != null) {
         sendEvent(name: 'humidity', value: humidity, unit: '%')
