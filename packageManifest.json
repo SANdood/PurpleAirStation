@@ -1,0 +1,16 @@
+{
+  "packageName": "PurpleAir Air Quality Station",
+  "author": "Barry A. Burke",
+  "version": "1.1.08",
+  "minimumHEVersion": "2.1.8",
+  "dateReleased": "2020-01-25",
+  "drivers": [
+    {
+      "id": "6a725f19-a77f-4d3e-9615-cce0d4834cb7",
+      "name": "PurpleAir Air Quality Station",
+      "namespace": "sandood",
+      "location": "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/devicetypes/sandood/purpleair-air-quality-station.src/purpleair-air-quality-station.groovy",
+      "required": true
+    }
+  ]
+}
