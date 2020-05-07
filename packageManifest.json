@@ -4,6 +4,9 @@
   "version": "1.1.08",
   "minimumHEVersion": "2.1.8",
   "dateReleased": "2020-01-25",
+  "releaseNotes": "",
+  "documentationLink": "https://github.com/SANdood/PurpleAirStation/blob/master/README.md",
+  "communityLink": "https://community.hubitat.com/t/release-free-device-driver-for-the-purpleair-air-quality-station-now-with-hubitat-support/12755",
   "drivers": [
     {
       "id": "6a725f19-a77f-4d3e-9615-cce0d4834cb7",
