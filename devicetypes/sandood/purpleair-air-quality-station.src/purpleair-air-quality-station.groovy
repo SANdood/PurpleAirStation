@@ -37,17 +37,18 @@
 *	1.1.01 - Added automatic support for both SmartThings and Hubitat
 *	1.1.02a- Fix null response handling
 *	1.1.03 - Fixed descriptionText:
-*   1.1.04 - Fixed incorrect collection of temperature, humidity and pressure where both sensors are not available
+*       1.1.04 - Fixed incorrect collection of temperature, humidity and pressure where both sensors are not available
 *	1.1.05 - Added optional debug logging preference setting
 *	1.1.06 - Optimized temp/humidity/pressure updates
 *	1.1.07 - Fixed Flagged sensors, added Hidden device support (needs owners's Key)
 *	1.1.08 - Added reference adjustments for Temp, Humidity & Pressure
+*       1.1.09 - Added ability to change pressure units
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.08" }
+def getVersionNum() { return "1.1.09" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -90,7 +91,7 @@ metadata {
         capability "Signal Strength"
         capability "Sensor"
         capability "Refresh"
-        if (isST) {capability "Air Quality Sensor"} else {attribute "airQuality", "number"}
+        if (isST) {capability "Air Quality Sensor"} else {capability "AirQuality"}
 
         attribute "locationName", "string"
         attribute "ID", "string"
@@ -127,9 +128,11 @@ metadata {
 		input(name: "purpleKey", type: "password", title: (isHE?'<b>':'') + "PurpleAir Private Key (optional)" + (isHE?'</b>':''), required: false, displayDuringSetup: true, description: "Enter the Private Key for this Station")
     	input(name: 'updateMins', type: 'enum', description: "Select the update frequency", 
         	  title: (isHE?'<b>':'') + "Update frequency (minutes)" + (isHE?'</b>':''), displayDuringSetup: true, defaultValue: '5', options: ['1','3','5','10','15','30'], required: true)
+    	input(name: 'pressureUnits', type: 'enum', description: "Select the units for pressure", title: (isHE?'<b>':'') + "Pressure units" + (isHE?'</b>':''), displayDuringSetup: true, defaultValue: 'inHg', options: ['inHg','hPa','Pa'], required: true)
+
 		input "referenceTemp", "decimal", title: (isHE?'<b>':'') + "Reference temperature" + (isHE?'</b>':''), description: "Enter current reference temperature reading", displayDuringSetup: false
 		input "referenceRH", "number", title: (isHE?'<b>':'') + "Reference relative humidity" + (isHE?'</b>':''), description: "Enter current reference RH% reading", displayDuringSetup: false
-		input "referenceInHg", "decimal", title: (isHE?'<b>':'') + "Reference barometric pressure" + (isHE?'</b>':''), description: "Enter current reference InHg reading", displayDuringSetup: false
+		input "referencePressure", "decimal", title: (isHE?'<b>':'') + "Reference barometric pressure" + (isHE?'</b>':''), description: "Enter current reference reading", displayDuringSetup: false
 		input(name: 'debugOn', type: 'bool', title: (isHE?'<b>':'') + "Enable debug logging?" + (isHE?'</b>':''), displayDuringSetup: true, defaultValue: false)
     }
     
@@ -318,9 +321,10 @@ def initialize() {
 	}
 
 	// handle reference barometric pressure / InHgOffset automation
-	if (settings.referenceInHg != null) {
+	if (settings.referencePressure != null) {
 		if (state.sensorInHg) {
 			state.sensorInHg = roundIt(state.sensorInHg, 2)
+            settings.referenceInHg = convertPressure(settings.referencePressure, settings.pressureUnits, 'inHg')
 			state.InHgOffset = roundIt(settings.referenceInHg - state.sensorInHg, 2)
 			if (debugOn) log.debug "sensorInHg: ${state.sensorInHg}, referenceInHg: ${referenceInHg}, offset: ${state.InHgOffset}"
 			settings.referenceInHg = null
@@ -704,6 +708,7 @@ def parsePurpleAir(response) {
     		def v = pressure
     		pressure = roundIt((v + offset), 2)
     	}
+        pressure= convertPressure(pressure, 'inHg', settings.pressureUnits) 
 	}
     if (temperature != null) {
         sendEvent(name: 'temperature', value: temperature, unit: 'F')
@@ -713,8 +718,8 @@ def parsePurpleAir(response) {
         sendEvent(name: 'humidity', value: humidity, unit: '%')
     }
     if (pressure != null) {
-        sendEvent(name: 'pressure', value: pressure, unit: 'inHg', displayed: false)
-        sendEvent(name: 'pressureDisplay', value: pressure+'\ninHg', unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
+        sendEvent(name: 'pressure', value: pressure, unit: settings.pressureUnits, displayed: false)
+        sendEvent(name: 'pressureDisplay', value: pressure+'\n'+settings.pressureUnits, unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
     }
     
     def now = new Date(newest).format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
@@ -824,4 +829,30 @@ private def getCaqiColors() {
         [value:  99, color: '#f29305'],
         [value: 100, color: '#e8416f']		// Red - Very High
     ]
+}
+private def convertPressure(value, from, to) {
+    if (from == to) {
+        return value
+    }
+    def combined = from+'-'+to
+    switch(combined) {
+        case "inHg-hPa":
+            return roundIt((3386.38816 * value)/100,2)
+            break;
+        case "inHg-Pa":
+            return roundIt((3386.38816 * value),2)
+            break;
+        case "Pa-hPa":
+            return roundIt((value/100),2)
+            break;
+        case "hPa-Pa":
+            return roundIt((value*100),2)
+            break;
+        case "Pa-inHg":
+            return roundIt((value*0.0002953006),2)        
+            break;
+        case "hPa-inHg":
+            return roundIt((value*0.2953005865),2)
+            break;
+    }
 }
