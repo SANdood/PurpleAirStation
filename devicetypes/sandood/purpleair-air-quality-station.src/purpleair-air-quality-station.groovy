@@ -37,18 +37,17 @@
 *	1.1.01 - Added automatic support for both SmartThings and Hubitat
 *	1.1.02a- Fix null response handling
 *	1.1.03 - Fixed descriptionText:
-*       1.1.04 - Fixed incorrect collection of temperature, humidity and pressure where both sensors are not available
+*   1.1.04 - Fixed incorrect collection of temperature, humidity and pressure where both sensors are not available
 *	1.1.05 - Added optional debug logging preference setting
 *	1.1.06 - Optimized temp/humidity/pressure updates
 *	1.1.07 - Fixed Flagged sensors, added Hidden device support (needs owners's Key)
 *	1.1.08 - Added reference adjustments for Temp, Humidity & Pressure
-*       1.1.09 - Added ability to change pressure units
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.09" }
+def getVersionNum() { return "1.1.08" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -719,7 +718,7 @@ def parsePurpleAir(response) {
     }
     if (pressure != null) {
         sendEvent(name: 'pressure', value: pressure, unit: settings.pressureUnits, displayed: false)
-        sendEvent(name: 'pressureDisplay', value: pressure+'\n'+settings.pressureUnits, unit: '', descriptionText: "Barometric Pressure is ${pressure}inHg" )
+        sendEvent(name: 'pressureDisplay', value: pressure+'\n'+settings.pressureUnits, unit: '', descriptionText: "Barometric Pressure is ${pressure}${settings.pressureUnits}" )
     }
     
     def now = new Date(newest).format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
