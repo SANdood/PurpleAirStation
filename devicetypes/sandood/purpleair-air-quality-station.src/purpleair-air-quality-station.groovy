@@ -326,10 +326,11 @@ def initialize() {
 			state.sensorInHg = roundIt(state.sensorInHg, 2)
             settings.referenceInHg = convertPressure(settings.referencePressure, settings.pressureUnits, 'inHg')
 			state.InHgOffset = roundIt(settings.referenceInHg - state.sensorInHg, 2)
-			if (debugOn) log.debug "sensorInHg: ${state.sensorInHg}, referenceInHg: ${referenceInHg}, offset: ${state.InHgOffset}"
+			if (debugOn) log.debug "sensorInHg: ${state.sensorInHg}, referenceInHg: ${settings.referenceInHg}, offset: ${state.InHgOffset}"
 			settings.referenceInHg = null
-			device.updateSetting('referenceInHg', "")
-			if (isHE) device.clearSetting('referenceInHg')
+            settings.referencePressure = null
+			device.updateSetting('referencePressure', "")
+			if (isHE) device.clearSetting('referencePressure')
 			//sendEvent(getTemperatureResult(state.sensorTemp))
 		} // else, preserve settings.referenceTemp, state.tempOffset will be calculate on the next temperature report
 	}
@@ -835,6 +836,7 @@ private def convertPressure(value, from, to) {
         return value
     }
     def combined = from+'-'+to
+    if (debugOn) log.debug "conversion is ${combined}"
     switch(combined) {
         case "inHg-hPa":
             return roundIt((3386.38816 * value)/100,2)
@@ -852,7 +854,8 @@ private def convertPressure(value, from, to) {
             return roundIt((value*0.0002953006),2)        
             break;
         case "hPa-inHg":
-            return roundIt((value*0.2953005865),2)
+            return roundIt((value*0.02953005865),2)
             break;
     }
+    
 }
