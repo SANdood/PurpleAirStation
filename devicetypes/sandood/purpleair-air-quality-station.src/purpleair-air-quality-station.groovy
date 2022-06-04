@@ -42,13 +42,15 @@
 *	1.1.06 - Optimized temp/humidity/pressure updates
 *	1.1.07 - Fixed Flagged sensors, added Hidden device support (needs owners's Key)
 *	1.1.08 - Added reference adjustments for Temp, Humidity & Pressure
-*       1.1.09 - Added ability to change pressure units
+*   1.1.09 - Added ability to change pressure units
+*   1.1.10 - Updated to utilize Purple API (based on Peter Miller's Hubitat device driver 
+*                   (https://raw.githubusercontent.com/pfmiller0/Hubitat/main/PurpleAir%20AQI%20Virtual%20Sensor.groovy)
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.09" }
+def getVersionNum() { return "1.1.10" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
@@ -85,7 +87,7 @@ private Boolean getIsHEHub() { (state.isHE) }					// if (isHEHub) ...
 
 metadata {
     definition (name: "PurpleAir Air Quality Station", namespace: "sandood", author: "sandood",
-			    importUrl: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/devicetypes/sandood/purpleair-air-quality-station.src/purpleair-air-quality-station.groovy") {
+			    importUrl: "") {
         capability "Temperature Measurement"
         capability "Relative Humidity Measurement"
         capability "Signal Strength"
@@ -124,6 +126,7 @@ metadata {
     }
 
     preferences {
+		input "X_API_Key", "text", title: "PurpleAir API key", required: true, description: "Contact contact@purpleair.com to request an API key"
 		input(name: "purpleID", type: "text", title: (isHE?'<b>':'') + "PurpleAir Station ID" + (isHE?'</b>':''), required: true, displayDuringSetup: true, description: 'Enter the desired PurpleAir Station ID')
 		input(name: "purpleKey", type: "password", title: (isHE?'<b>':'') + "PurpleAir Private Key (optional)" + (isHE?'</b>':''), required: false, displayDuringSetup: true, description: "Enter the Private Key for this Station")
     	input(name: 'updateMins', type: 'enum', description: "Select the update frequency", 
@@ -367,14 +370,19 @@ void getPurpleAirAQI() {
         sendEvent(name: 'aqi', value: null, displayed: false)
         return
     }
-    def params = [
-        uri: 		'https://www.purpleair.com',
-        path: 		'/json',
-        query: 		[show: settings?.purpleID, key: settings?.purpleKey],
-		timeout:	30
-        // body: ''
-    ]
+    String url="https://api.purpleair.com/v1/sensors/$purpleID"
+    
+	String query_fields="name,aqi10,latitude,longitude,last_seen,humidity,temperature,pressure,pm1.0,pm2.5,pm10.0,voc"
+
+	Map params = [
+		uri: url,
+		headers: ['X-API-Key': X_API_Key],
+		timeout: 30,
+		ignoreSSLIssues: true
+	]
     // If building on/for hubitat, comment out the next line, and uncomment the one after it
+    log.trace "Request to be made: ${params}"
+
 	if (state.isST) {
 		include 'asynchttp_v1'
     	asynchttp_v1.get(purpleAirResponse, params)
@@ -384,7 +392,12 @@ void getPurpleAirAQI() {
 }
 
 def purpleAirResponse(resp, data) {
-	if (resp && (resp.status == 200)) {
+    if (resp.getStatus() != 200 ) {
+        log.error "HTTP error from PurpleAir: " + resp.getStatus() + "\n${resp.getErrorData()}"
+        return
+	}
+	
+    if (resp && (resp.status == 200)) {
 		try {
 			if (resp.json) {
 				//log.trace "Response Status: ${resp.status}\n${resp.json}"
@@ -406,7 +419,9 @@ def purpleAirResponse(resp, data) {
 }
 
 def parsePurpleAir(response) {
-	if (!response || (!response.results[0]?.Stats && !response.results[1]?.Stats)) {
+    log.trace("JSON response data object from PurpleAir: {$response.sensor}") 
+
+	if (!response || (!response.sensor?.stats)) {
 		if (response && !settings.purpleKey) {
 			log.warn "No data returned for PurpleAir request. Perhaps you need to enter your Private Key in Preferences?"
 			return
@@ -414,33 +429,28 @@ def parsePurpleAir(response) {
     	log.error "Invalid response for PurpleAir request: ${response}"
         return
     }
-    //log.debug response
-	def hidden = response.results[0].Hidden
+    logDebug("JSON response from PurpleAir: {$response}")
+
+	def hidden = response.sensor?.private
 	if (state.isHidden != hidden) state.isHidden = hidden
-	logDebug("Parsing PurpleAir ${response.results[0].DEVICE_LOCATIONTYPE}${hidden?' (hidden)':''} sensor report")
+	logDebug("Parsing PurpleAir ${response.sensor?.DEVICE_LOCATIONTYPE}${hidden?' (hidden)':''} sensor report")
     
     // Interestingly all the values in Stats are numbers, while everything else in results are strings
-    def stats = [:]
-    Long newest
     def single = null
-    stats[0] = (response.results[0]?.Stats) ? new JsonSlurper().parseText(response.results[0].Stats) : [:]
-    if (response.results[0].DEVICE_LOCATIONTYPE != 'inside') {
-		stats[1] = (response.results[1]?.Stats) ? new JsonSlurper().parseText(response.results[1].Stats) : [:]
-        newest = ((stats[0]?.lastModified?.toLong() > stats[1]?.lastModified?.toLong()) ? stats[0].lastModified.toLong() : stats[1].lastModified.toLong())
+    def stats = (response.sensor?.stats)
+    logDebug("Averaged stats from Purple Air:{$stats}")
+    def newest = new Date(stats.time_stamp.toLong() * 1000)
+    logDebug("Last refreshed time/dat: {$newest}")
+
+    if (response.sensor?.DEVICE_LOCATIONTYPE != '1') {
+        //Device is indoors
     } else {
-    	stats[1] = [:]
-        if (!response.results[0]?.A_H && (stats[0] != [:])) {
-        	single = 0
-            newest = stats[0]?.lastModified?.toLong()
-        } else {
-        	single = -1		// we only have A, and it's bad
-        }
+        //Device is outdoors
     }
-    //log.debug "newest: ${newest}, timestamp: ${device.currentValue('timestamp')}"
 	def timeStamp = state.isST ? device.currentValue('timestamp') : device.currentValue('timestamp', true)
     if (newest?.toString() == timeStamp) { logDebug("No update..."); return; } // nothing has changed yet
     
-    Long age = now() - newest
+    def age = new Date() - newest
     String oldData = ''
     if (age > 300000) {
         if	    (age > 604800000)	oldData = '1 week'
@@ -453,70 +463,11 @@ def parsePurpleAir(response) {
     }
     
     //log.debug stats
-	if (response.results[0]?.Flag || response.results[1].Flag) {
+	if (response.sensor?.channel_flags > 0) {
 		// One or both sensors are flagged for bad data
-		def isFlagged = state?.isFlagged
-		if ((isFlagged == null) || (isFlagged > 10)) isFlagged = 0
-		isFlagged++;
-		if (isFlagged == 1) log.warn "NOTICE: One of your sensors has been Flagged for sending bad data"
-		state.isFlagged = isFlagged
-			
-		single = 0
-		if (response.results[0]) {
-			if ((!response.results[0].PM2_5Value?.toBigDecimal()) &&
-				(!response.results[0].p_0_3_um?.toBigDecimal()) &&
-				 (!response.results[0].p_0_5_um?.toBigDecimal()) &&
-				  (!response.results[0].p_2_5_um?.toBigDecimal()) &&
-				   (!response.results[0].p_5_0_um?.toBigDecimal()) &&
-				    (!response.results[0].p_10_0_um?.toBigDecimal()) &&
-				     (!response.results[0].pm1_0_cf_1?.toBigDecimal()) &&
-					  (!response.results[0].pm2_5_cf_1?.toBigDecimal()) &&
-					   (!response.results[0].pm10_0_cf_1?.toBigDecimal()) &&
-						(!response.results[0].pm1_0_atm?.toBigDecimal()) &&
-						 (!response.results[0].pm2_5_atm?.toBigDecimal()) &&
-						 (!response.results[0].pm10_0_atm?.toBigDecimal())) {
-				single = 1	// A is bad
-			}
-		}
-		if ((single == 1) && (response.results[1])) {
-			if ((!response.results[1].PM2_5Value?.toBigDecimal()) &&
-				(!response.results[1].p_0_3_um?.toBigDecimal()) &&
-				 (!response.results[1].p_0_5_um?.toBigDecimal()) &&
-				  (!response.results[1].p_2_5_um?.toBigDecimal()) &&
-				   (!response.results[1].p_5_0_um?.toBigDecimal()) &&
-				    (!response.results[1].p_10_0_um?.toBigDecimal()) &&
-				     (!response.results[1].pm1_0_cf_1?.toBigDecimal()) &&
-					  (!response.results[1].pm2_5_cf_1?.toBigDecimal()) &&
-					   (!response.results[1].pm10_0_cf_1?.toBigDecimal()) &&
-						(!response.results[1].pm1_0_atm?.toBigDecimal()) &&
-						 (!response.results[1].pm2_5_atm?.toBigDecimal()) &&
-						 (!response.results[1].pm10_0_atm?.toBigDecimal())) {
-				single = -1	// both are bad
-			}
-		}
-	}
-
-    if (single == null) {
-        if (response.results[0]?.A_H || (stats[0]==[:])) {
-            if (response.results[1]?.A_H || (stats[1]==[:])) {
-                // A bad, B bad
-                single = -1
-            } else {
-                // A bad, B good
-                single = 1
-            }
-        } else {
-            // Channel A is good
-            if (response.results[1]?.A_H || (stats[1]==[:])) {
-                // A good, B bad
-                single = 0
-            } else {
-                // A good, B good
-                single = 2
-            }
-        }
+		state.isFlagged = response.sensor.channel_flags
     }
-	logDebug("Single: ${single}")
+
     def pm
     def pm10
     def pm30
@@ -525,107 +476,72 @@ def parsePurpleAir(response) {
     def pm24
     def pm7
     def rssi
-    if (single >= 0) {
-    	if (single == 2) {
-        	pm   = roundIt(((stats[0].v  + stats[1].v  ) / 2.0), 2)
-            pm10 = roundIt(((stats[0].v1 + stats[1].v1 ) / 2.0), 2)
-            pm30 = roundIt(((stats[0].v2 + stats[1].v2 ) / 2.0), 2)
-            pm1  = roundIt(((stats[0].v3 + stats[1].v3 ) / 2.0), 2)
-            pm6  = roundIt(((stats[0].v4 + stats[1].v4 ) / 2.0), 2)
-            pm24 = roundIt(((stats[0].v5 + stats[1].v5 ) / 2.0), 2)
-            pm7  = roundIt(((stats[0].v6 + stats[1].v6 ) / 2.0), 2)
- 			//if (response.results[0].RSSI?.isNumber() && response.results[1].RSSI?.isNumber()) rssi = roundIt(((response.results[0].RSSI.toBigDecimal() + response.results[1].RSSI.toBigDecimal()) / 2.0), 0)
-			if (response?.results[0]?.RSSI) rssi = roundIt(response.results[0].RSSI, 0)
-			if (rssi) {
-				if (response?.results[1]?.RSSI) {
-					rssi = roundIt((rssi + response.results[1].RSSI)/2,0)
-				}
-			} else if (response?.results[1]?.RSSI) rssi = roundIt(response.results[1].RSSI, 0)
-											 
-			//rssi = roundIt(((response.results[0]?.RSSI?.toBigDecimal() + response.results[1]?.RSSI?.toBigDecimal()) / 2.0), 0)
-        } else {
-        	pm   = roundIt(stats[single].v, 2)
-            pm10 = roundIt(stats[single].v1, 2)
-            pm30 = roundIt(stats[single].v2, 2)
-            pm1  = roundIt(stats[single].v3, 2)
-            pm6  = roundIt(stats[single].v4, 2)
-            pm24 = roundIt(stats[single].v5, 2)
-            pm7  = roundIt(stats[single].v6, 2)
-            rssi = roundIt(response.results[single]?.RSSI, 0)
-        }
-    } else {
-    	// No valid data...now what?
-        oldData = "ERROR: Station ${purpleID} has no trusted sensor reports"
-    }
+  	pm   = roundIt(stats."pm2.5", 2)
+    pm10 = roundIt(stats."pm2.5_10minute", 2)
+    pm30 = roundIt(stats."pm2.5_30minute", 2)
+    pm1  = roundIt(stats."pm2.5_60minute", 2)
+    pm6  = roundIt(stats."pm2.5_6hour", 2)
+    pm24 = roundIt(stats."pm2.5_24hour", 2)
+    pm7  = roundIt(stats."pm2.5_1week", 2)
+    rssi = roundIt(response.sensor?.rssi, 0)
 
-    if (single >= 0) {
-        def aqi   = roundIt(pm_to_aqi(pm), 0)
-        //if (aqi < 1.0) aqi = roundIt(aqi,0)		// to avoid displaying ".4" when it should display "0.4"
+    def aqi   = roundIt(pm_to_aqi(pm), 0)
+    //if (aqi < 1.0) aqi = roundIt(aqi,0)		// to avoid displaying ".4" when it should display "0.4"
         
         
-        def aqi10 = roundIt(pm_to_aqi(pm10), 0)
-        def aqi30 = roundIt(pm_to_aqi(pm30), 0)
-        def aqi1  = roundIt(pm_to_aqi(pm1), 0)
-        def aqi6  = roundIt(pm_to_aqi(pm6), 0)
-        def aqi24 = roundIt(pm_to_aqi(pm24), 0)
-        def aqi7  = roundIt(pm_to_aqi(pm7), 0)
+    def aqi10 = roundIt(pm_to_aqi(pm10), 0)
+    def aqi30 = roundIt(pm_to_aqi(pm30), 0)
+    def aqi1  = roundIt(pm_to_aqi(pm1), 0)
+    def aqi6  = roundIt(pm_to_aqi(pm6), 0)
+    def aqi24 = roundIt(pm_to_aqi(pm24), 0)
+    def aqi7  = roundIt(pm_to_aqi(pm7), 0)
 
-        sendEvent(name: 'airQualityIndex', 	value: aqi, displayed: false)
-        
-        def caqi = roundIt(pm_to_caqi(pm1), 0)	// CAQI is based off of hourly data
-        // sendEvent(name: "CAQI", value: caqi, unit: "CAQI", displayed: true)
-		// sendEvent(name: "caqi", value: caqi, unit: "CAQI", displayed: true)
-        sendEvent(name: "airQuality", value: caqi, unit: "CAQI", displayed: true, descriptionText: "The Common Air Quality Index for the hour is ${caqi} CAQI")
+    sendEvent(name: 'airQualityIndex', 	value: aqi, displayed: false)
+       
+    def caqi = roundIt(pm_to_caqi(pm1), 0)	// CAQI is based off of hourly data
+    // sendEvent(name: "CAQI", value: caqi, unit: "CAQI", displayed: true)
+	// sendEvent(name: "caqi", value: caqi, unit: "CAQI", displayed: true)
+    sendEvent(name: "airQuality", value: caqi, unit: "CAQI", displayed: true, descriptionText: "The Common Air Quality Index for the hour is ${caqi} CAQI")
 
         String p25 = roundIt(pm,1) + ' µg/m³'
         String cond = '??'
-        if (oldData == '') {
-            if 		(aqi < 51)  {sendEvent(name: 'message', value: " GOOD: little to no health risk\n (${p25})", descriptionText: 'AQI is GOOD - little to no health risk'); cond = 'GOOD';}
-            else if (aqi < 101) {sendEvent(name: 'message', value: " MODERATE: slight risk for some people\n (${p25})", descriptionText: 'AQI is MODERATE - slight risk for some people'); cond = 'MODERATE';}
-            else if (aqi < 151) {sendEvent(name: 'message', value: " UNHEALTHY for sensitive groups\n (${p25})", descriptionText: 'AQI is UNHEALTHY for Sensitive Groups'); cond = 'UNHEALTHY';}
-            else if (aqi < 201) {sendEvent(name: 'message', value: " UNHEALTHY for most people\n (${p25})", descriptionText: 'AQI is UNHEALTHY for most people'); cond = '*UNHEALTHY*';}
-            else if (aqi < 301) {sendEvent(name: 'message', value: " VERY UNHEALTHY: serious effects for everyone (${p25})", descriptionText: 'AQI is VERY UNHEALTHY - serious effects for everyone'); cond = 'VERY UNHEALTHY';}
-            else 				{sendEvent(name: 'message', value: " HAZARDOUS: emergency conditions for everyone (${p25})", descriptionText: 'AQI is HAZARDOUS - emergency conditions for everyone'); cond = 'HAZARDOUS';}
-        } else {
-            sendEvent(name: 'message', value: oldData, descriptionText: "No updates for ${roundIt((age/60000),2)} minutes")
-            log.error "No updates for ${roundIt((age/60000),2)} minutes"
-        }
-		log.info("AQI: ${aqi}")
-        
-        sendEvent(name: 'aqi', 	 value: aqi,   descriptionText: "AQI real time is ${aqi}")
-        sendEvent(name: 'aqiDisplay', value: "${aqi}\n${cond}", displayed: false)
-        sendEvent(name: 'aqi10', value: aqi10, descriptionText: "AQI 10 minute average is ${aqi10}")
-        sendEvent(name: 'aqi30', value: aqi30, descriptionText: "AQI 30 minute average is ${aqi30}")
-        sendEvent(name: 'aqi1',  value: aqi1,  descriptionText: "AQI 1 hour average is ${aqi1}")
-        sendEvent(name: 'aqi6',  value: aqi6,  descriptionText: "AQI 6 hour average is ${aqi6}")
-        sendEvent(name: 'aqi24', value: aqi24, descriptionText: "AQI 24 hour average is ${aqi24}")
-        sendEvent(name: 'aqi7',  value: aqi7,  descriptionText: "AQI 7 day average is ${aqi7}")
-
-        sendEvent(name: 'pm',   value: pm,   unit: 'µg/m³', descriptionText: "PM2.5 real time is ${pm}µg/m³")
-        sendEvent(name: 'pm10', value: pm10, unit: 'µg/m³', descriptionText: "PM2.5 10 minute average is ${pm10}µg/m³")
-        sendEvent(name: 'pm30', value: pm30, unit: 'µg/m³', descriptionText: "PM2.5 30 minute average is ${pm30}µg/m³")
-        sendEvent(name: 'pm1',  value: pm1,  unit: 'µg/m³', descriptionText: "PM2.5 1 hour average is ${pm1}µg/m³")
-        sendEvent(name: 'pm6',  value: pm6,  unit: 'µg/m³', descriptionText: "PM2.5 6 hour average is ${pm6}µg/m³")
-        sendEvent(name: 'pm24', value: pm24, unit: 'µg/m³', descriptionText: "PM2.5 24 hour average is ${pm24}µg/m³")
-        sendEvent(name: 'pm7',  value: pm7,  unit: 'µg/m³', descriptionText: "PM2.5 7 day average is ${pm7}µg/m³")
+    if (oldData == '') {
+       if 		(aqi < 51)  {sendEvent(name: 'message', value: " GOOD: little to no health risk\n (${p25})", descriptionText: 'AQI is GOOD - little to no health risk'); cond = 'GOOD';}
+       else if (aqi < 101) {sendEvent(name: 'message', value: " MODERATE: slight risk for some people\n (${p25})", descriptionText: 'AQI is MODERATE - slight risk for some people'); cond = 'MODERATE';}
+       else if (aqi < 151) {sendEvent(name: 'message', value: " UNHEALTHY for sensitive groups\n (${p25})", descriptionText: 'AQI is UNHEALTHY for Sensitive Groups'); cond = 'UNHEALTHY';}
+       else if (aqi < 201) {sendEvent(name: 'message', value: " UNHEALTHY for most people\n (${p25})", descriptionText: 'AQI is UNHEALTHY for most people'); cond = '*UNHEALTHY*';}
+       else if (aqi < 301) {sendEvent(name: 'message', value: " VERY UNHEALTHY: serious effects for everyone (${p25})", descriptionText: 'AQI is VERY UNHEALTHY - serious effects for everyone'); cond = 'VERY UNHEALTHY';}
+       else 				{sendEvent(name: 'message', value: " HAZARDOUS: emergency conditions for everyone (${p25})", descriptionText: 'AQI is HAZARDOUS - emergency conditions for everyone'); cond = 'HAZARDOUS';}
     } else {
-    	sendEvent(name: 'message', value: oldData) // ERROR
+       sendEvent(name: 'message', value: oldData, descriptionText: "No updates for ${roundIt((age/60000),2)} minutes")
+       log.error "No updates for ${roundIt((age/60000),2)} minutes"
     }
+    log.info("AQI: ${aqi}")
+        
+    sendEvent(name: 'aqi', 	 value: aqi,   descriptionText: "AQI real time is ${aqi}")
+    sendEvent(name: 'aqiDisplay', value: "${aqi}\n${cond}", displayed: false)
+    sendEvent(name: 'aqi10', value: aqi10, descriptionText: "AQI 10 minute average is ${aqi10}")
+    sendEvent(name: 'aqi30', value: aqi30, descriptionText: "AQI 30 minute average is ${aqi30}")
+    sendEvent(name: 'aqi1',  value: aqi1,  descriptionText: "AQI 1 hour average is ${aqi1}")
+    sendEvent(name: 'aqi6',  value: aqi6,  descriptionText: "AQI 6 hour average is ${aqi6}")
+    sendEvent(name: 'aqi24', value: aqi24, descriptionText: "AQI 24 hour average is ${aqi24}")
+    sendEvent(name: 'aqi7',  value: aqi7,  descriptionText: "AQI 7 day average is ${aqi7}")
+
+    sendEvent(name: 'pm',   value: pm,   unit: 'µg/m³', descriptionText: "PM2.5 real time is ${pm}µg/m³")
+    sendEvent(name: 'pm10', value: pm10, unit: 'µg/m³', descriptionText: "PM2.5 10 minute average is ${pm10}µg/m³")
+    sendEvent(name: 'pm30', value: pm30, unit: 'µg/m³', descriptionText: "PM2.5 30 minute average is ${pm30}µg/m³")
+    sendEvent(name: 'pm1',  value: pm1,  unit: 'µg/m³', descriptionText: "PM2.5 1 hour average is ${pm1}µg/m³")
+    sendEvent(name: 'pm6',  value: pm6,  unit: 'µg/m³', descriptionText: "PM2.5 6 hour average is ${pm6}µg/m³")
+    sendEvent(name: 'pm24', value: pm24, unit: 'µg/m³', descriptionText: "PM2.5 24 hour average is ${pm24}µg/m³")
+    sendEvent(name: 'pm7',  value: pm7,  unit: 'µg/m³', descriptionText: "PM2.5 7 day average is ${pm7}µg/m³")
+
 
     def temperature
     def humidity
     def pressure
  
     // Collect Temperature - may be on one, the other or both sensors
-    if (response.results[0]?.temp_f?.isNumber()) {
-		if (response.results[1]?.temp_f?.isNumber()) {
-            temperature = roundIt((response.results[0]?.temp_f?.toBigDecimal() + response.results[1].temp_f.toBigDecimal()) / 2.0, 1)
-		} else {
-			temperature = roundIt(response.results[0].temp_f.toBigDecimal(), 1)
-		}
-	} else if (response.results[1]?.temp_f?.isNumber()){
-        temperature = roundIt(response.results[1].temp_f.toBigDecimal(), 1)
-	}
+    temperature = roundIt(response.sensor?.temperature?.toBigDecimal(), 1)
 	// Adjust to reference temperature
 	if (temperature != null) {
 		if ((state.sensorTemp == null) || (state.sensorTemp != temperature)) state.sensorTemp = temperature
@@ -649,15 +565,7 @@ def parsePurpleAir(response) {
 	}
 	
     // Collect Humidity - may be on one, the other or both sensors
-    if (response.results[0]?.humidity?.isNumber()) {
-		if (response.results[1]?.humidity?.isNumber()) {
-            humidity = roundIt(((response.results[0]?.humidity?.toBigDecimal() + response.results[1].humidity.toBigDecimal()) / 2.0), 0) 
-		} else {
-			humidity = roundIt(response.results[0].humidity.toBigDecimal(), 0)
-		}
-	} else if (response.results[1]?.humidity?.isNumber()) {
-        humidity = roundIt(response.results[1].humidity.toBigDecimal(), 0)
-	}
+	humidity = roundIt(response.sensor?.humidity.toBigDecimal(), 0)
 	// Adjust to reference humidity
 	if (humidity != null) {
 		if ((state.sensorRH == null) || (state.sensorRH != humidity)) state.sensorRH = humidity
@@ -680,15 +588,7 @@ def parsePurpleAir(response) {
     	}
 	}
     // collect Pressure - may be on one, the other or both sensors
-    if (response.results[0]?.pressure?.isNumber()) {
-		if (response.results[1]?.pressure?.isNumber()) {
-            pressure = roundIt((((response.results[0].pressure.toBigDecimal() + response.results[1].pressure.toBigDecimal()) / 2.0) * 0.02953), 2) 
-		} else {
-			pressure = roundIt((response.results[0].pressure.toBigDecimal() * 0.02953), 2)
-		}
-	} else if (response.results[1]?.pressure?.isNumber()) {
-        pressure = roundIt((response.results[1].pressure.toBigDecimal() * 0.02953), 2)
-	}
+	pressure = roundIt((response.sensor?.pressure.toBigDecimal() * 0.02953), 2)
 	// Adjust to reference pressure
 	if (pressure != null) {
 		if ((state.sensorInHg == null) || (state.sensorInHg != pressure)) state.sensorInHg = pressure
@@ -723,20 +623,20 @@ def parsePurpleAir(response) {
         sendEvent(name: 'pressureDisplay', value: pressure+'\n'+settings.pressureUnits, unit: '', descriptionText: "Barometric Pressure is ${pressure}${settings.pressureUnits}" )
     }
     
-    def now = new Date(newest).format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
-    def locLabel = response.results[0]?.Label
-    if (response.results[0]?.DEVICE_LOCATIONTYPE != 'inside') {
-    	if (single < 2) {
-    		locLabel = locLabel + '\nBad data from ' + ((single<0)?'BOTH channels':((single==0)?'Channel B':'Channel A'))
+    def now = newest.format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
+    def locLabel = response.sensor?.name
+    if (response.sensor?.DEVICE_LOCATIONTYPE != '1') {
+    	if (state.isFlagged > 0) {
+    		locLabel = locLabel + '\nBad data from ' + ((state.isFlagged>2)?'BOTH channels':((state.isFlagged==1)?'Channel B':'Channel A'))
     	}
     } else {
-    	if (single < 0) {
+    	if (state.isFlagged == 1) {
         	locLabel = locLabel + '\nBad data from ONLY channel (A)'
         }
     }
     sendEvent(name: 'locationName', value: locLabel)
     sendEvent(name: 'rssi', value: rssi, unit: 'db', descriptionText: "WiFi RSSI is ${rssi}db")
-    sendEvent(name: 'ID', value: response.results[0]?.ID, descriptionText: "Purple Air Station ID is ${response.results[0]?.ID}")
+    sendEvent(name: 'ID', value: response.sensor?.sensor_index, descriptionText: "Purple Air Station ID is ${response.sensor?.sensor_index}")
     sendEvent(name: 'updated', value: now, displayed: false)
     sendEvent(name: 'timestamp', value: newest.toString(), displayed: false)	// Send last
 }
