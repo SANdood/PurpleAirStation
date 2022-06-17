@@ -370,8 +370,11 @@ void getPurpleAirAQI() {
         sendEvent(name: 'aqi', value: null, displayed: false)
         return
     }
-    String url="https://api.purpleair.com/v1/sensors/$purpleID"
-    
+    if (settings.purpleKey) {
+	    url="https://api.purpleair.com/v1/sensors/$purpleID?read_key=$purpleKey"
+        } else {
+            url="https://api.purpleair.com/v1/sensors/$purpleID"
+    }
 	String query_fields="name,aqi10,latitude,longitude,last_seen,humidity,temperature,pressure,pm1.0,pm2.5,pm10.0,voc"
 
 	Map params = [
