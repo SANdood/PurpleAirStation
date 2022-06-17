@@ -359,6 +359,7 @@ def refresh() { getPurpleAirAQI() }
 def configure() { updated() }
 
 void getPurpleAirAQI() {
+	String url=" "
 	if (!state.purpleAirVersion || (state.purpleAirVersion != getVersionLabel())) {
     	log.warn "Version changed, updating..."
         runIn(2, updated, [overwrite: true])
