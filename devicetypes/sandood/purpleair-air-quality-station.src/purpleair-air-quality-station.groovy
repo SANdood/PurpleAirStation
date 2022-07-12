@@ -45,13 +45,13 @@
 *   1.1.09 - Added ability to change pressure units
 *   1.1.10 - Updated to utilize Purple API (based on Peter Miller's Hubitat device driver 
 *                   (https://raw.githubusercontent.com/pfmiller0/Hubitat/main/PurpleAir%20AQI%20Virtual%20Sensor.groovy)
-*   1.1.11 - Added initialize function to reset capabilities of device if they change
+*   1.1.11 - Added initialize function to reset capabilities of device if they change, merged changes from therkilt to applow private devices 
 *
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 
-def getVersionNum() { return "1.1.10" }
+def getVersionNum() { return "1.1.11" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 
