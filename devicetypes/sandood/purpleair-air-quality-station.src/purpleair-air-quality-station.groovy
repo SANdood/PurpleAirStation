@@ -45,6 +45,7 @@
 *   1.1.09 - Added ability to change pressure units
 *   1.1.10 - Updated to utilize Purple API (based on Peter Miller's Hubitat device driver 
 *                   (https://raw.githubusercontent.com/pfmiller0/Hubitat/main/PurpleAir%20AQI%20Virtual%20Sensor.groovy)
+*   1.1.11 - Added initialize function to reset capabilities of device if they change
 *
 */
 import groovy.json.JsonSlurper
@@ -77,6 +78,9 @@ private String getHubPlatform() {
         state.hubPlatform = getPlatform()						// if (hubPlatform == 'Hubitat') ... or if (state.hubPlatform == 'SmartThings')...
         state.isST = state.hubPlatform.startsWith('S')			// if (state.isST) ...
         state.isHE = state.hubPlatform.startsWith('H')			// if (state.isHE) ...
+        state.isTemp = true
+        state.isHum = true
+        state.isPress = true
     }
     return state.hubPlatform
 }
@@ -88,16 +92,25 @@ private Boolean getIsHEHub() { (state.isHE) }					// if (isHEHub) ...
 metadata {
     definition (name: "PurpleAir Air Quality Station", namespace: "sandood", author: "sandood",
 			    importUrl: "") {
-        capability "Temperature Measurement"
-        capability "Relative Humidity Measurement"
         capability "Signal Strength"
         capability "Sensor"
         capability "Refresh"
         if (isST) {capability "Air Quality Sensor"} else {capability "AirQuality"}
 
+        if (isTemp) {
+            capability "Temperature Measurement"
+    		attribute "temperatureDisplay", 'string'
+        }
+        if (isHum) {
+            capability "Relative Humidity Measurement"
+        }
+        if (isPress) {
+	    	attribute "pressure", 'number'
+		    attribute "pressureDisplay", 'string'
+            attribute "pressure", "number"
+        }
         attribute "locationName", "string"
         attribute "ID", "string"
-        attribute "pressure", "number"
 		attribute "airQuality", 'number'
         attribute "airQualityIndex", "string"
         attribute "aqi", "number"				// current AQI
@@ -119,10 +132,8 @@ metadata {
         attribute 'message', 'string'
   		attribute "updated", "string"
         attribute "timestamp", "string"
-		attribute "temperatureDisplay", 'string'
-		attribute "pressure", 'number'
-		attribute "pressureDisplay", 'string'
         command "refresh"
+        command "initialize"
     }
 
     preferences {
@@ -381,7 +392,7 @@ void getPurpleAirAQI() {
 		ignoreSSLIssues: true
 	]
     // If building on/for hubitat, comment out the next line, and uncomment the one after it
-    log.trace "Request to be made: ${params}"
+    //log.trace "Request to be made: ${params}"
 
 	if (state.isST) {
 		include 'asynchttp_v1'
@@ -419,7 +430,7 @@ def purpleAirResponse(resp, data) {
 }
 
 def parsePurpleAir(response) {
-    log.trace("JSON response data object from PurpleAir: {$response.sensor}") 
+    //log.trace("JSON response data object from PurpleAir: {$response.sensor}") 
 
 	if (!response || (!response.sensor?.stats)) {
 		if (response && !settings.purpleKey) {
@@ -433,7 +444,7 @@ def parsePurpleAir(response) {
 
 	def hidden = response.sensor?.private
 	if (state.isHidden != hidden) state.isHidden = hidden
-	logDebug("Parsing PurpleAir ${response.sensor?.DEVICE_LOCATIONTYPE}${hidden?' (hidden)':''} sensor report")
+	logDebug("Parsing PurpleAir ${response.sensor?.name}${hidden?' (hidden)':''} sensor report")
     
     // Interestingly all the values in Stats are numbers, while everything else in results are strings
     def single = null
@@ -442,10 +453,10 @@ def parsePurpleAir(response) {
     def newest = new Date(stats.time_stamp.toLong() * 1000)
     logDebug("Last refreshed time/dat: {$newest}")
 
-    if (response.sensor?.DEVICE_LOCATIONTYPE != '1') {
-        //Device is indoors
-    } else {
+    if (response.sensor?.location_type != '1') {
         //Device is outdoors
+    } else {
+        //Device is indoors
     }
 	def timeStamp = state.isST ? device.currentValue('timestamp') : device.currentValue('timestamp', true)
     if (newest?.toString() == timeStamp) { logDebug("No update..."); return; } // nothing has changed yet
@@ -540,77 +551,94 @@ def parsePurpleAir(response) {
     def humidity
     def pressure
  
-    // Collect Temperature - may be on one, the other or both sensors
-    temperature = roundIt(response.sensor?.temperature?.toBigDecimal(), 1)
-	// Adjust to reference temperature
-	if (temperature != null) {
-		if ((state.sensorTemp == null) || (state.sensorTemp != temperature)) state.sensorTemp = temperature
-		if (settings.referenceTemp != null) {
-			state.tempOffset = roundIt((referenceTemp - temperature), 1)
-			if (debugOn) log.debug "sensorTemp: ${temperature}, referenceTemp: ${referenceTemp}, offset: ${state.tempOffset}"
-			settings.referenceTemp = null
-			device.updateSetting('referenceTemp', "")
-			if (isHE) device.clearSetting('referenceTemp')
-		}
-		def offset = state.tempOffset
-		if (offset == null) {
-			def temp = device.currentValue('tempOffset')	// convert the old attribute to the new state variable
-			offset = (temp != null) ? temp : 0.0
-			state.tempOffset = offset
-		}
-    	if (offset != 0.0) {
-    		def v = temperature
-    		temperature = roundIt((v + offset), 1)
-    	}
-	}
+    if (response.sensor?.temperature) {
+        // Collect Temperature - may be on one, the other or both sensors
+        temperature = roundIt(response.sensor?.temperature?.toBigDecimal(), 1)
+	    // Adjust to reference temperature
+	    if (temperature != null) {
+            state.isTemp = true
+		    if ((state.sensorTemp == null) || (state.sensorTemp != temperature)) state.sensorTemp = temperature
+		    if (settings.referenceTemp != null) {
+		    	state.tempOffset = roundIt((referenceTemp - temperature), 1)
+		    	if (debugOn) log.debug "sensorTemp: ${temperature}, referenceTemp: ${referenceTemp}, offset: ${state.tempOffset}"
+		    	settings.referenceTemp = null
+		    	device.updateSetting('referenceTemp', "")
+		    	if (isHE) device.clearSetting('referenceTemp')
+		    }
+		    def offset = state.tempOffset
+		    if (offset == null) {
+		    	def temp = device.currentValue('tempOffset')	// convert the old attribute to the new state variable
+		    	offset = (temp != null) ? temp : 0.0
+		    	state.tempOffset = offset
+		    }
+    	    if (offset != 0.0) {
+    		    def v = temperature
+    		    temperature = roundIt((v + offset), 1)
+    	    }
+        }
+    } else {
+        state.isTemp = false
+    }
 	
-    // Collect Humidity - may be on one, the other or both sensors
-	humidity = roundIt(response.sensor?.humidity.toBigDecimal(), 0)
-	// Adjust to reference humidity
-	if (humidity != null) {
-		if ((state.sensorRH == null) || (state.sensorRH != humidity)) state.sensorRH = humidity
-		if (settings.referenceRH != null) {
-			state.RHOffset = roundIt((referenceRH - humidity), 0)
-			if (debugOn) log.debug "sensorRH: ${humidity}, referenceRH: ${referenceRH}, offset: ${state.RHOffset}"
-			settings.referenceRH = null
-			device.updateSetting('referenceRH', "")
-			if (isHE) device.clearSetting('referenceRH')
-		}
-		def offset = state.RHOffset
-		if (offset == null) {
-			def RH = device.currentValue('RHOffset')	// convert the old attribute to the new state variable
-			offset = (RH != null) ? RH : 0
-			state.RHOffset = offset
-		}
-    	if (offset != 0.0) {
-    		def v = humidity
-    		humidity = roundIt((v + offset), 0)
-    	}
-	}
-    // collect Pressure - may be on one, the other or both sensors
-	pressure = roundIt((response.sensor?.pressure.toBigDecimal() * 0.02953), 2)
-	// Adjust to reference pressure
-	if (pressure != null) {
-		if ((state.sensorInHg == null) || (state.sensorInHg != pressure)) state.sensorInHg = pressure
-		if (settings.referenceInHg != null) {
-			state.InHgOffset = roundIt((settings.referenceInHg - pressure), 2)
-			if (debugOn) log.debug "sensorInHg: ${pressure}, referenceInHg: ${referenceInHg}, offset: ${state.InHgOffset}"
-			settings.referenceInHg = null
-			device.updateSetting('referenceInHg', "")
-			if (isHE) device.clearSetting('referenceInHg')
-		}
-		def offset = state.InHgOffset
-		if (offset == null) {
-			def InHg = device.currentValue('InHgOffset')	// convert the old attribute to the new state variable
-			offset = (InHg != null) ? InHg : 0.0
-			state.InHgOffset = offset
-		}
-    	if (offset != 0.0) {
-    		def v = pressure
-    		pressure = roundIt((v + offset), 2)
-    	}
-        pressure= convertPressure(pressure, 'inHg', settings.pressureUnits) 
-	}
+    if (response.sensor?.humidity) {
+        // Collect Humidity - may be on one, the other or both sensors
+    	humidity = roundIt(response.sensor?.humidity.toBigDecimal(), 0)
+    	// Adjust to reference humidity
+    	if (humidity != null) {
+            state.isHum = true
+    		if ((state.sensorRH == null) || (state.sensorRH != humidity)) state.sensorRH = humidity
+    		if (settings.referenceRH != null) {
+    			state.RHOffset = roundIt((referenceRH - humidity), 0)
+    			if (debugOn) log.debug "sensorRH: ${humidity}, referenceRH: ${referenceRH}, offset: ${state.RHOffset}"
+    			settings.referenceRH = null
+	    		device.updateSetting('referenceRH', "")
+    			if (isHE) device.clearSetting('referenceRH')
+	    	}
+    		def offset = state.RHOffset
+    		if (offset == null) {
+    			def RH = device.currentValue('RHOffset')	// convert the old attribute to the new state variable
+    			offset = (RH != null) ? RH : 0
+    			state.RHOffset = offset
+    		}
+        	if (offset != 0.0) {
+        		def v = humidity
+        		humidity = roundIt((v + offset), 0)
+        	}
+	    }
+    } else {
+        state.isHum = false
+    }
+    
+    if (response.sensor?.pressure) {
+        // collect Pressure - may be on one, the other or both sensors
+	    pressure = roundIt((response.sensor?.pressure.toBigDecimal() * 0.02953), 2)
+	    // Adjust to reference pressure
+	    if (pressure != null) {
+            state.isPress = true
+	    	if ((state.sensorInHg == null) || (state.sensorInHg != pressure)) state.sensorInHg = pressure
+	    	if (settings.referenceInHg != null) {
+	    		state.InHgOffset = roundIt((settings.referenceInHg - pressure), 2)
+	    		if (debugOn) log.debug "sensorInHg: ${pressure}, referenceInHg: ${referenceInHg}, offset: ${state.InHgOffset}"
+	    		settings.referenceInHg = null
+	    		device.updateSetting('referenceInHg', "")
+	    		if (isHE) device.clearSetting('referenceInHg')
+	    	}
+	    	def offset = state.InHgOffset
+	    	if (offset == null) {
+	    		def InHg = device.currentValue('InHgOffset')	// convert the old attribute to the new state variable
+	    		offset = (InHg != null) ? InHg : 0.0
+	    		state.InHgOffset = offset
+	    	}
+        	if (offset != 0.0) {
+        		def v = pressure
+        		pressure = roundIt((v + offset), 2)
+        	}
+            pressure= convertPressure(pressure, 'inHg', settings.pressureUnits)
+	    }
+    } else {
+        state.isPress = false
+    }
+ 
     if (temperature != null) {
         sendEvent(name: 'temperature', value: temperature, unit: 'F')
         sendEvent(name: 'temperatureDisplay', value: roundIt(temperature, 0), unit: 'F', displayed: false)
