@@ -42,18 +42,19 @@
 *	1.1.06 - Optimized temp/humidity/pressure updates
 *	1.1.07 - Fixed Flagged sensors, added Hidden device support (needs owners's Key)
 *	1.1.08 - Added reference adjustments for Temp, Humidity & Pressure
-*   1.1.09 - Added ability to change pressure units
-*   1.1.10 - Updated to utilize Purple API (based on Peter Miller's Hubitat device driver 
+*	1.1.09 - Added ability to change pressure units
+*	1.1.10 - Updated to utilize Purple API (based on Peter Miller's Hubitat device driver 
 *                   (https://raw.githubusercontent.com/pfmiller0/Hubitat/main/PurpleAir%20AQI%20Virtual%20Sensor.groovy)
-*   1.1.11 - Added initialize function to reset capabilities of device if they change, merged changes from therkilt to applow private devices 
-*
+*	1.1.11 - Added initialize function to reset capabilities of device if they change, merged changes from therkilt to applow private devices, also added flexible import url 
+*			(flexible URL import system is from Simon Burkes Ecowitt drivers)          
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
-
+public static String gitHubUser() { return "mgroeninger"; }
+public static String gitHubRepo() { return "PurpleAirStation"; }
+public static String gitHubBranch() { return "main"; }
 def getVersionNum() { return "1.1.11" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
-
 
 // **************************************************************************************************************************
 // SmartThings/Hubitat Portability Library (SHPL)
@@ -91,7 +92,7 @@ private Boolean getIsHEHub() { (state.isHE) }					// if (isHEHub) ...
 
 metadata {
     definition (name: "PurpleAir Air Quality Station", namespace: "sandood", author: "sandood",
-			    importUrl: "") {
+			    importUrl: "https://raw.githubusercontent.com/${gitHubUser()}/${gitHubRepo()}/${gitHubBranch()}/devicetypes/sandood/purpleair-air-quality-station.src/purpleair-air-quality-station.groovy") {
         capability "Signal Strength"
         capability "Sensor"
         capability "Refresh"
