@@ -46,14 +46,16 @@
 *	1.1.10 - Updated to utilize Purple API (based on Peter Miller's Hubitat device driver 
 *                   (https://raw.githubusercontent.com/pfmiller0/Hubitat/main/PurpleAir%20AQI%20Virtual%20Sensor.groovy)
 *	1.1.11 - Added initialize function to reset capabilities of device if they change, merged changes from therkilt to applow private devices, also added flexible import url 
-*			(flexible URL import system is from Simon Burkes Ecowitt drivers)          
+*			(flexible URL import system is from Simon Burkes Ecowitt drivers)  
+*   1.2.0  - Rework to support PurpleAir API - much of the change is centered around reducing the amount of data requested, as their API now calculates response costs based on fields.
+*            see https://community.purpleair.com/t/api-pricing/4523 and https://develop.purpleair.com/pricing (requires an api account)
 */
 import groovy.json.JsonSlurper
 import java.math.BigDecimal
 public static String gitHubUser() { return "mgroeninger"; }
 public static String gitHubRepo() { return "PurpleAirStation"; }
 public static String gitHubBranch() { return "main"; }
-def getVersionNum() { return "1.1.11" }
+def getVersionNum() { return "1.2.0" }
 private def getVersionLabel() { return "PurpleAir Air Quality Station, version ${getVersionNum()}" }
 
 // **************************************************************************************************************************
@@ -116,20 +118,7 @@ metadata {
         attribute "airQualityIndex", "string"
         attribute "aqi", "number"				// current AQI
 		attribute "aqiDisplay", 'string'
-		attribute "aqi10", "number"				// 10 minute average
-		attribute "aqi30", "number"				// 30 minute average
-		attribute "aqi1", "number"				// 1 hour average
-		attribute "aqi6", "number"				// 6 hour average
-		attribute "aqi24", "number"				// 24 hour average
-		attribute "aqi7", "number"				// 7 day average
 		attribute "pm", "number"				// current 2.5 PM (particulate matter)
-		attribute "pm10", "number"				// 10 minute average
-		attribute "pm30", "number"				// 30 minute average
-		attribute "pm1", "number"				// 1 hour average
-		attribute "pm6", "number"				// 6 hour average
-		attribute "pm24", "number"				// 24 hour average
-		attribute "pm7", "number"				// 7 day average
-		attribute "rssi", "string"				// Signal Strength attribute (not supporting lqi)
         attribute 'message', 'string'
   		attribute "updated", "string"
         attribute "timestamp", "string"
@@ -149,6 +138,7 @@ metadata {
 		input "referenceRH", "number", title: (isHE?'<b>':'') + "Reference relative humidity" + (isHE?'</b>':''), description: "Enter current reference RH% reading", displayDuringSetup: false
 		input "referencePressure", "decimal", title: (isHE?'<b>':'') + "Reference barometric pressure" + (isHE?'</b>':''), description: "Enter current reference reading", displayDuringSetup: false
 		input(name: 'debugOn', type: 'bool', title: (isHE?'<b>':'') + "Enable debug logging?" + (isHE?'</b>':''), displayDuringSetup: true, defaultValue: false)
+		input(name: 'disableFetch', type: 'bool', title: (isHE?'<b>':'') + "Disable web fetch?" + (isHE?'</b>':''), displayDuringSetup: true, defaultValue: false)
     }
     
     tiles(scale: 2) {
@@ -173,62 +163,14 @@ metadata {
         valueTile('aqiDisplay', 'device.aqiDisplay', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: '${currentValue}', icon: "https://raw.githubusercontent.com/SANdood/PurpleAirStation/master/images/purpleair-small.png"
         }
-		valueTile('aqi10', 'device.aqi10', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: (aqiColors)
-        }
-		valueTile('aqi30', 'device.aqi30', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: (aqiColors)
-        }
-		valueTile('aqi1', 'device.aqi1', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: (aqiColors)
-        }
-		valueTile('aqi6', 'device.aqi6', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: (aqiColors)
-        }
-		valueTile('aqi24', 'device.aqi24', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: (aqiColors)
-        }
-		valueTile('aqi7', 'device.aqi7', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: 'AQI\n${currentValue}',
-            	backgroundColors: (aqiColors)
-        }
 		valueTile('pm', 'device.pm', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
         	state 'default', label: 'Now\n${currentValue}\nµg/m³'
-        }
-		valueTile('pm10', 'device.pm10', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: '10 Min\n${currentValue}\nµg/m³'
-        }
-		valueTile('pm30', 'device.pm30', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: '30 Min\n${currentValue}\nµg/m³'
-        }
-		valueTile('pm1', 'device.pm1', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: '1 Hour\n${currentValue}\nµg/m³'
-        }
-		valueTile('pm6', 'device.pm6', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: '6 Hour\n${currentValue}\nµg/m³'
-        }
-		valueTile('pm24', 'device.pm24', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: '1 Day\n${currentValue}\nµg/m³'
-        }
-		valueTile('pm7', 'device.pm7', inactiveLabel: false, width: 1, height: 1, decoration: 'flat', wordWrap: true) {
-        	state 'default', label: '1 Week\n${currentValue}\nµg/m³'
         }
         valueTile("locationTile", "device.locationName", inactiveLabel: false, width: 3, height: 1, decoration: "flat", wordWrap: true) {
             state "default", label:'${currentValue}'
         }
-        standardTile("refresh", "device.weather", inactiveLabel: false, width: 1, height: 1, decoration: "flat", wordWrap: true) {
-            state "default", label: "", action: "refresh", icon:"st.secondary.refresh"
-        }
         valueTile("pressure", "device.pressureDisplay", inactiveLabel: false, width: 1, height: 1, decoration: "flat", wordWrap: true) {
             state "default", label: '${currentValue}'
-        }
-        valueTile("rssi", "device.rssi", inactiveLabel: false, width: 1, height: 1, decoration: "flat", wordWrap: true) {
-            state "default", label: 'RSSI\n${currentValue}db'
         }
         valueTile("ID", "device.ID", inactiveLabel: false, width: 1, height: 1, decoration: "flat", wordWrap: true) {
             state "default", label: 'ID\n${currentValue}'
@@ -258,15 +200,12 @@ metadata {
         main(['airQualityIndex'])
         details([	"airQualityIndex",
 					'aqi10', 'aqi30', 'aqi1', 'aqi6', 'aqi24', 'aqi7',
-					'pm10', 'pm30', 'pm1', 'pm6', 'pm24', 'pm7',
 					'updated', 'locationTile', 
-					'temperature', 'humidity', 'pressure', 'rssi', 'ID', 'caqi', 
+					'temperature', 'humidity', 'pressure', 'ID', 'caqi', 
                     'refresh',
 				])
 	}
 }
-
-def noOp() {}
 
 // parse events into attributes
 def parse(String description) {
@@ -284,7 +223,6 @@ def uninstalled() {
 
 def updated() {
 	log.info "Updated with settings: ${settings}"
-    state.purpleAirStation = getVersionLabel()
     state.hubPlatform = null; getHubPlatform();		// Force hub update if we are updated...just in case
     state.purpleAirVersion = getVersionLabel()
 	unschedule()
@@ -292,8 +230,10 @@ def updated() {
 }
 
 def initialize() {
+  	state.isFlagged = 0
 	log.info getVersionLabel() + " on ${getHubPlatform()} Initializing..."
 	if (purpleID) {
+        getPurpleAirSetup()
 		// Schedule the updates
 		def t = updateMins ?: '5'
 		if (t == '1') {
@@ -306,8 +246,6 @@ def initialize() {
 		log.debug "Debug logging enabled for 30 minutes"
 		runIn(1800, debugOff, [overwrite: true])
 	}
-	state.isFlagged = 0
-	
 	
 	// handle reference temperature / tempOffset automation
 	if (settings.referenceTemp != null) {
@@ -370,6 +308,34 @@ def poll() { refresh() }
 def refresh() { getPurpleAirAQI() }
 def configure() { updated() }
 
+void getPurpleAirSetup() {
+	String url=" "
+    if (!settings.purpleKey) {
+      	logDebug "PurpleAir private key is not provided."
+    } else {
+        querys.put('read_keys', $purpleKey)
+    }
+    Map querys = [
+        fields: "name,private,location_type,latitude,longitude,altitude,hardware,firmware_version,date_created,position_rating,channel_state",
+    ]
+    url="https://api.purpleair.com/v1/sensors/$purpleID"
+
+    Map params = [
+        uri: url,
+        headers: ['X-API-Key': X_API_Key],
+        timeout: 30,
+        ignoreSSLIssues: true,
+        query: querys
+    ]
+    // If building on/for hubitat, comment out the next line, and uncomment the one after it
+    //log.trace "Request to be made: ${params}"
+    logDebug("Sending request to PurpleAir: {$params}")
+    if (!settings.disableFetch) {
+       asynchttpGet(purpleAirResponse, params)
+    }
+}
+
+
 void getPurpleAirAQI() {
 	String url=" "
 	if (!state.purpleAirVersion || (state.purpleAirVersion != getVersionLabel())) {
@@ -383,28 +349,31 @@ void getPurpleAirAQI() {
         sendEvent(name: 'aqi', value: null, displayed: false)
         return
     }
-    if (settings.purpleKey) {
-	    url="https://api.purpleair.com/v1/sensors/$purpleID?read_key=$purpleKey"
-        } else {
-            url="https://api.purpleair.com/v1/sensors/$purpleID"
+    if (!settings.purpleKey) {
+      	logDebug "PurpleAir private key is not provided."
+    } else {
+        querys.put('read_keys', $purpleKey)
     }
-	String query_fields="name,aqi10,latitude,longitude,last_seen,humidity,temperature,pressure,pm1.0,pm2.5,pm10.0,voc"
+    Map querys = [
+        fields: "humidity,temperature,pressure,pm2.5",
+        show_only: settings.purpleID
+    ]
+    
+    url="https://api.purpleair.com/v1/sensors/$purpleID"
 
-	Map params = [
-		uri: url,
-		headers: ['X-API-Key': X_API_Key],
-		timeout: 30,
-		ignoreSSLIssues: true
-	]
+    Map params = [
+        uri: url,
+        headers: ['X-API-Key': X_API_Key],
+        timeout: 30,
+        ignoreSSLIssues: true,
+        query: querys
+    ]
     // If building on/for hubitat, comment out the next line, and uncomment the one after it
     //log.trace "Request to be made: ${params}"
-
-	if (state.isST) {
-		include 'asynchttp_v1'
-    	asynchttp_v1.get(purpleAirResponse, params)
-	} else {
-    	asynchttpGet(purpleAirResponse, params)
-	}
+    logDebug("Sending request to PurpleAir: {$params}")
+    if (!settings.disableFetch) {
+       asynchttpGet(purpleAirResponse, params)
+    }
 }
 
 def purpleAirResponse(resp, data) {
@@ -418,6 +387,7 @@ def purpleAirResponse(resp, data) {
 			if (resp.json) {
 				//log.trace "Response Status: ${resp.status}\n${resp.json}"
                 logDebug("purpleAirResponse() got JSON...")
+                logDebug("JSON response: {$resp.json}")
 			} else {
             	// FAIL - no data
                 log.warn "purpleAirResponse() no JSON: ${resp.data}"
@@ -427,7 +397,7 @@ def purpleAirResponse(resp, data) {
 			log.error "purpleAirResponse() - General Exception: ${e}"
         	throw e
             return false
-        } 
+        }
         parsePurpleAir(resp.json)
         return true
     }
@@ -435,9 +405,11 @@ def purpleAirResponse(resp, data) {
 }
 
 def parsePurpleAir(response) {
-    //log.trace("JSON response data object from PurpleAir: {$response.sensor}") 
-
-	if (!response || (!response.sensor?.stats)) {
+    logDebug("JSON response data object from PurpleAir: {$response.sensor}") 
+    def sensor = response.sensor
+    def resp_time_stamp = response.time_stamp
+    def data_time_stamp = response.data_time_stamp
+	if (!response || (!sensor)) {
 		if (response && !settings.purpleKey) {
 			log.warn "No data returned for PurpleAir request. Perhaps you need to enter your Private Key in Preferences?"
 			return
@@ -447,23 +419,58 @@ def parsePurpleAir(response) {
     }
     logDebug("JSON response from PurpleAir: {$response}")
 
-	def hidden = response.sensor?.private
-	if (state.isHidden != hidden) state.isHidden = hidden
-	logDebug("Parsing PurpleAir ${response.sensor?.name}${hidden?' (hidden)':''} sensor report")
+    def locLabel = sensor?.name
+    if (locLabel) {
+        //if "name" exists, the data should be in response to a setup request
+        //fields: "name,private,location_type,latitude,longitude,altitude,hardware,firmware_version,date_created,position_rating,channel_state",
+	    def hidden = sensor?.private
+        if (state.isHidden != hidden) { 
+            state.isHidden = hidden
+            logDebug("PurpleAir ${sensor?.name} hidden: ${hidden}")
+        }
+	    def inside = sensor?.location_type
+        if (state.isInside != inside) {
+            state.isInside = inside
+            logDebug("PurpleAir ${sensor?.name} inside: ${inside}")
+        }
+        def flagged = sensor?.channel_state
+	    if (state.isFlagged != flagged) state.isFlagged = flagged
+        switch(state.isFlagged) {
+            case 0: locLabel = locLabel
+            case 1: locLabel = locLabel + '\nBad data from ONLY channel (A)'
+                break; 
+            case 2: locLabel = locLabel + '\nBad data from ONLY channel (B)'
+                break;
+            case 3: locLabel = locLabel + '\nBad data from BOTH channels'
+                device.updateSetting("disableFetch",[value:"true",type:"bool"])
+                break;
+            default:
+                logDebug("Unknown channel flag ${state.isFlagged}")
+                break; 
+          }
+        def latitude = sensor?.latitude
+        if (state.latitude != latitude) state.latitude = latitude
+        def longitude = sensor?.longitude
+        if (state.longitude != longitude) state.longitude = longitude
+        def altitude = sensor?.altitude
+        if (state.altitude != altitude) state.altitude = altitude
+        def hardware = sensor?.hardware
+        if (state.hardware != hardware) state.hardware = hardware
+        def firmware_version = sensor?.firmware_version
+        if (state.firmware_version != firmware_version) state.firmware_version = firmware_version
+        def date_created = sensor?.date_created
+        if (state.date_created != date_created) state.date_created = date_created
+        def position_rating = sensor?.position_rating
+        if (state.position_rating != position_rating) state.position_rating = position_rating
+        state.purpleAirStation = state.hardware + ' ' + state.firmware_version
+        sendEvent(name: 'locationName', value: locLabel)
+        sendEvent(name: 'ID', value: sensor?.sensor_index, descriptionText: "Purple Air Station ID is ${sensor?.sensor_index}")
+    }
     
     // Interestingly all the values in Stats are numbers, while everything else in results are strings
-    def single = null
-    def stats = (response.sensor?.stats)
-    logDebug("Averaged stats from Purple Air:{$stats}")
-    def newest = new Date(stats.time_stamp.toLong() * 1000)
+    def newest = new Date(data_time_stamp.toLong() * 1000)
     logDebug("Last refreshed time/dat: {$newest}")
-
-    if (response.sensor?.location_type != '1') {
-        //Device is outdoors
-    } else {
-        //Device is indoors
-    }
-	def timeStamp = state.isST ? device.currentValue('timestamp') : device.currentValue('timestamp', true)
+    def timeStamp = device.currentValue('timestamp', true)
     if (newest?.toString() == timeStamp) { logDebug("No update..."); return; } // nothing has changed yet
     
     def age = new Date() - newest
@@ -478,49 +485,18 @@ def parsePurpleAir(response) {
         if (oldData != '') oldData = 'WARNING: No updates for more than ' + oldData
     }
     
-    //log.debug stats
-	if (response.sensor?.channel_flags > 0) {
-		// One or both sensors are flagged for bad data
-		state.isFlagged = response.sensor.channel_flags
-    }
-
     def pm
-    def pm10
-    def pm30
-    def pm1
-    def pm6
-    def pm24
-    def pm7
-    def rssi
-  	pm   = roundIt(stats."pm2.5", 2)
-    pm10 = roundIt(stats."pm2.5_10minute", 2)
-    pm30 = roundIt(stats."pm2.5_30minute", 2)
-    pm1  = roundIt(stats."pm2.5_60minute", 2)
-    pm6  = roundIt(stats."pm2.5_6hour", 2)
-    pm24 = roundIt(stats."pm2.5_24hour", 2)
-    pm7  = roundIt(stats."pm2.5_1week", 2)
-    rssi = roundIt(response.sensor?.rssi, 0)
-
+  	pm   = roundIt(sensor."pm2.5", 2)
     def aqi   = roundIt(pm_to_aqi(pm), 0)
     //if (aqi < 1.0) aqi = roundIt(aqi,0)		// to avoid displaying ".4" when it should display "0.4"
-        
-        
-    def aqi10 = roundIt(pm_to_aqi(pm10), 0)
-    def aqi30 = roundIt(pm_to_aqi(pm30), 0)
-    def aqi1  = roundIt(pm_to_aqi(pm1), 0)
-    def aqi6  = roundIt(pm_to_aqi(pm6), 0)
-    def aqi24 = roundIt(pm_to_aqi(pm24), 0)
-    def aqi7  = roundIt(pm_to_aqi(pm7), 0)
-
+ 
     sendEvent(name: 'airQualityIndex', 	value: aqi, displayed: false)
-       
-    def caqi = roundIt(pm_to_caqi(pm1), 0)	// CAQI is based off of hourly data
+    //def caqi = roundIt(pm_to_caqi(pm1), 0)	// CAQI is based off of hourly data
     // sendEvent(name: "CAQI", value: caqi, unit: "CAQI", displayed: true)
 	// sendEvent(name: "caqi", value: caqi, unit: "CAQI", displayed: true)
-    sendEvent(name: "airQuality", value: caqi, unit: "CAQI", displayed: true, descriptionText: "The Common Air Quality Index for the hour is ${caqi} CAQI")
-
-        String p25 = roundIt(pm,1) + ' µg/m³'
-        String cond = '??'
+    //sendEvent(name: "airQuality", value: caqi, unit: "CAQI", displayed: true, descriptionText: "The Common Air Quality Index for the hour is ${caqi} CAQI")
+    String p25 = roundIt(pm,1) + ' µg/m³'
+    String cond = '??'
     if (oldData == '') {
        if 		(aqi < 51)  {sendEvent(name: 'message', value: " GOOD: little to no health risk\n (${p25})", descriptionText: 'AQI is GOOD - little to no health risk'); cond = 'GOOD';}
        else if (aqi < 101) {sendEvent(name: 'message', value: " MODERATE: slight risk for some people\n (${p25})", descriptionText: 'AQI is MODERATE - slight risk for some people'); cond = 'MODERATE';}
@@ -536,29 +512,13 @@ def parsePurpleAir(response) {
         
     sendEvent(name: 'aqi', 	 value: aqi,   descriptionText: "AQI real time is ${aqi}")
     sendEvent(name: 'aqiDisplay', value: "${aqi}\n${cond}", displayed: false)
-    sendEvent(name: 'aqi10', value: aqi10, descriptionText: "AQI 10 minute average is ${aqi10}")
-    sendEvent(name: 'aqi30', value: aqi30, descriptionText: "AQI 30 minute average is ${aqi30}")
-    sendEvent(name: 'aqi1',  value: aqi1,  descriptionText: "AQI 1 hour average is ${aqi1}")
-    sendEvent(name: 'aqi6',  value: aqi6,  descriptionText: "AQI 6 hour average is ${aqi6}")
-    sendEvent(name: 'aqi24', value: aqi24, descriptionText: "AQI 24 hour average is ${aqi24}")
-    sendEvent(name: 'aqi7',  value: aqi7,  descriptionText: "AQI 7 day average is ${aqi7}")
-
-    sendEvent(name: 'pm',   value: pm,   unit: 'µg/m³', descriptionText: "PM2.5 real time is ${pm}µg/m³")
-    sendEvent(name: 'pm10', value: pm10, unit: 'µg/m³', descriptionText: "PM2.5 10 minute average is ${pm10}µg/m³")
-    sendEvent(name: 'pm30', value: pm30, unit: 'µg/m³', descriptionText: "PM2.5 30 minute average is ${pm30}µg/m³")
-    sendEvent(name: 'pm1',  value: pm1,  unit: 'µg/m³', descriptionText: "PM2.5 1 hour average is ${pm1}µg/m³")
-    sendEvent(name: 'pm6',  value: pm6,  unit: 'µg/m³', descriptionText: "PM2.5 6 hour average is ${pm6}µg/m³")
-    sendEvent(name: 'pm24', value: pm24, unit: 'µg/m³', descriptionText: "PM2.5 24 hour average is ${pm24}µg/m³")
-    sendEvent(name: 'pm7',  value: pm7,  unit: 'µg/m³', descriptionText: "PM2.5 7 day average is ${pm7}µg/m³")
-
-
     def temperature
     def humidity
     def pressure
  
-    if (response.sensor?.temperature) {
+    if (sensor?.temperature) {
         // Collect Temperature - may be on one, the other or both sensors
-        temperature = roundIt(response.sensor?.temperature?.toBigDecimal(), 1)
+        temperature = roundIt(sensor?.temperature?.toBigDecimal(), 1)
 	    // Adjust to reference temperature
 	    if (temperature != null) {
             state.isTemp = true
@@ -585,9 +545,9 @@ def parsePurpleAir(response) {
         state.isTemp = false
     }
 	
-    if (response.sensor?.humidity) {
+    if (sensor?.humidity) {
         // Collect Humidity - may be on one, the other or both sensors
-    	humidity = roundIt(response.sensor?.humidity.toBigDecimal(), 0)
+    	humidity = roundIt(sensor?.humidity.toBigDecimal(), 0)
     	// Adjust to reference humidity
     	if (humidity != null) {
             state.isHum = true
@@ -614,7 +574,7 @@ def parsePurpleAir(response) {
         state.isHum = false
     }
     
-    if (response.sensor?.pressure) {
+    if (sensor?.pressure) {
         // collect Pressure - may be on one, the other or both sensors
 	    pressure = roundIt((response.sensor?.pressure.toBigDecimal() * 0.02953), 2)
 	    // Adjust to reference pressure
@@ -657,19 +617,6 @@ def parsePurpleAir(response) {
     }
     
     def now = newest.format("h:mm:ss a '\non' M/d/yyyy", location.timeZone).toLowerCase()
-    def locLabel = response.sensor?.name
-    if (response.sensor?.DEVICE_LOCATIONTYPE != '1') {
-    	if (state.isFlagged > 0) {
-    		locLabel = locLabel + '\nBad data from ' + ((state.isFlagged>2)?'BOTH channels':((state.isFlagged==1)?'Channel B':'Channel A'))
-    	}
-    } else {
-    	if (state.isFlagged == 1) {
-        	locLabel = locLabel + '\nBad data from ONLY channel (A)'
-        }
-    }
-    sendEvent(name: 'locationName', value: locLabel)
-    sendEvent(name: 'rssi', value: rssi, unit: 'db', descriptionText: "WiFi RSSI is ${rssi}db")
-    sendEvent(name: 'ID', value: response.sensor?.sensor_index, descriptionText: "Purple Air Station ID is ${response.sensor?.sensor_index}")
     sendEvent(name: 'updated', value: now, displayed: false)
     sendEvent(name: 'timestamp', value: newest.toString(), displayed: false)	// Send last
 }
